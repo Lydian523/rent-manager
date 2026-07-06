@@ -971,7 +971,9 @@ window.openTenantForm=function(id){
 window.openLeaseForm=function(id){
   const l=id?byId('leases',id):{id:uid(),room_id:'',tenant_id:'',start_date:today(),end_date:'',
     deposit:0,prepaid_months:0,active:true,note:''};
-  const vac=T('rooms').filter(r=>r.room_type!=='倉庫'&&(r.status!=='出租中'||r.id===l.room_id));
+  // 可選房間：尚無進行中租約者（含補登既有房客的出租中房間）；編輯時保留原房間
+  const vac=T('rooms').filter(r=>r.room_type!=='倉庫'&&(!activeLease(r.id)||r.id===l.room_id));
+  if(!vac.length){ toast('所有房間都已有進行中租約'); return; }
   const m=modal(`<h3>${id?'編輯租約':'新租約'}</h3>
     <label>房間</label><select id="lr">${vac.map(r=>`<option value="${r.id}" ${r.id===l.room_id?'selected':''}>${esc(roomLabel(r))}（${esc(r.status)}）</option>`).join('')}</select>
     <label>房客</label><div class="row"><select id="lt" class="grow">
@@ -1046,7 +1048,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.0　參數如需調整請告知修改。</div>
+    <div class="muted" style="margin-top:6px">v1.0.1　參數如需調整請告知修改。</div>
   </div>`;
 }
 window.saveConn=async function(){
