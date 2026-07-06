@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>出租房屋管理</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ================= 設計代幣 ================= */
+:root{
+  --bg:#F5F3EC; --card:#FFFFFF; --card2:#EFEDE4;
+  --ink:#26312C; --ink2:#5F6B64; --line:#DDD9CC;
+  --green:#2D5A4A; --green-soft:#E3EDE8;
+  --red:#B54A35; --red-soft:#F6E3DE;
+  --amber:#C98F2B; --amber-soft:#F5EBD6;
+  --blue:#4A6B8A; --blue-soft:#E2EAF1;
+  --violet:#6E5A80;
+  --radius:14px; --shadow:0 1px 3px rgba(38,49,44,.08),0 4px 14px rgba(38,49,44,.06);
+  --serif:"Georgia","Noto Serif TC","PMingLiU",serif;
+  --sans:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+}
+[data-theme="dark"]{
+  --bg:#151917; --card:#1F2622; --card2:#262E29;
+  --ink:#E4E9E5; --ink2:#93A099; --line:#333D37;
+  --green:#5BA98D; --green-soft:#20352C;
+  --red:#E07A5F; --red-soft:#3A241E;
+  --amber:#E0B45C; --amber-soft:#38301B;
+  --blue:#7FA3C4; --blue-soft:#1F2A34;
+  --violet:#A98FC0;
+  --shadow:0 1px 3px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:16px;
+  padding-bottom:calc(76px + env(safe-area-inset-bottom));}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink);
+  background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--green);border-color:transparent}
+label{font-size:13px;color:var(--ink2);display:block;margin:10px 0 4px}
+
+/* ================= 頂欄 ================= */
+header{position:sticky;top:0;z-index:30;background:var(--green);color:#fff;
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,.15)}
+header h1{font-size:18px;font-weight:700;letter-spacing:.05em;flex:1}
+.sync-dot{width:10px;height:10px;border-radius:50%;background:#9aa;flex:none}
+.sync-dot.on{background:#7BE0A8}.sync-dot.q{background:#F0C36A}.sync-dot.off{background:#8b8b8b}
+.icon-btn{background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:10px;
+  padding:7px 11px;font-size:15px}
+
+/* ================= 底部導航 ================= */
+nav.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;
+  background:var(--card);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom)}
+nav.tabbar button{flex:1;background:none;border:none;padding:9px 0 7px;color:var(--ink2);
+  font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav.tabbar button .ico{font-size:21px;line-height:1}
+nav.tabbar button.act{color:var(--green);font-weight:700}
+
+/* ================= 通用元件 ================= */
+main{max-width:960px;margin:0 auto;padding:14px 14px 20px}
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:14px 16px;margin-bottom:12px}
+.card h2{font-size:15px;color:var(--ink2);font-weight:700;margin-bottom:10px;letter-spacing:.06em}
+.btn{border:none;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:600;
+  background:var(--green);color:#fff}
+.btn.sub{background:var(--card2);color:var(--ink)}
+.btn.warn{background:var(--red)}
+.btn.sm{padding:7px 12px;font-size:13px;border-radius:8px}
+.btn:disabled{opacity:.45}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600}
+.pill.g{background:var(--green-soft);color:var(--green)}
+.pill.r{background:var(--red-soft);color:var(--red)}
+.pill.a{background:var(--amber-soft);color:var(--amber)}
+.pill.b{background:var(--blue-soft);color:var(--blue)}
+.pill.gr{background:var(--card2);color:var(--ink2)}
+.muted{color:var(--ink2);font-size:13px}
+.money{font-family:var(--serif);font-weight:700;font-variant-numeric:tabular-nums}
+.divider{height:1px;background:var(--line);margin:10px 0}
+.empty{text-align:center;color:var(--ink2);padding:26px 10px;font-size:14px}
+
+/* ================= 警示列 ================= */
+.alert{border-left:4px solid var(--amber);background:var(--amber-soft);color:var(--ink);
+  border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:14px}
+.alert.red{border-color:var(--red);background:var(--red-soft)}
+
+/* ================= 鑰匙牆（房間卡片） ================= */
+.bldg-title{font-size:14px;font-weight:700;color:var(--ink2);margin:16px 2px 8px;
+  letter-spacing:.08em;display:flex;align-items:center;gap:8px}
+.bldg-title::after{content:"";flex:1;height:1px;background:var(--line)}
+.keywall{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px}
+.keycard{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:10px 10px 9px 12px;
+  position:relative;overflow:hidden;border:none;text-align:left;min-height:78px;
+  display:flex;flex-direction:column;gap:3px}
+.keycard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--kc,#999)}
+.keycard .rn{font-weight:700;font-size:15px;color:var(--ink)}
+.keycard .tt{font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.keycard .st{font-size:12px;font-weight:600;color:var(--kc)}
+.keycard:active{transform:scale(.97)}
+
+/* ================= 清單列 ================= */
+.li{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--line)}
+.li:last-child{border-bottom:none}
+.li .main{flex:1;min-width:0}
+.li .t1{font-weight:600;font-size:15px}
+.li .t2{font-size:12.5px;color:var(--ink2)}
+
+/* ================= 分段控制 ================= */
+.seg{display:flex;background:var(--card2);border-radius:11px;padding:3px;margin-bottom:12px;overflow-x:auto}
+.seg button{flex:1;border:none;background:none;padding:8px 10px;border-radius:9px;font-size:14px;
+  color:var(--ink2);font-weight:600;white-space:nowrap}
+.seg button.act{background:var(--card);color:var(--green);box-shadow:var(--shadow)}
+
+/* ================= 對話框 ================= */
+.modal-bg{position:fixed;inset:0;background:rgba(20,25,22,.5);z-index:50;display:flex;
+  align-items:flex-end;justify-content:center}
+@media(min-width:640px){.modal-bg{align-items:center}}
+.modal{background:var(--bg);border-radius:18px 18px 0 0;width:100%;max-width:560px;
+  max-height:88vh;overflow-y:auto;padding:18px 18px calc(18px + env(safe-area-inset-bottom))}
+@media(min-width:640px){.modal{border-radius:18px}}
+.modal h3{font-size:17px;margin-bottom:12px}
+.stat{font-family:var(--serif);font-size:26px;font-weight:700}
+.stat-lb{font-size:12px;color:var(--ink2)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;text-align:center}
+.bar-wrap{background:var(--card2);border-radius:6px;height:8px;overflow:hidden}
+.bar{height:100%;border-radius:6px;background:var(--green)}
+.toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:var(--ink);
+  color:var(--bg);padding:10px 18px;border-radius:24px;font-size:14px;z-index:99;
+  opacity:0;transition:opacity .25s;pointer-events:none;max-width:88vw;text-align:center}
+.toast.show{opacity:1}
+canvas.chart{width:100%!important}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>出租房屋管理</h1>
+  <span class="sync-dot off" id="syncDot" title="同步狀態"></span>
+  <button class="icon-btn" id="darkBtn" aria-label="切換深色模式">◐</button>
+</header>
+
+<main id="view"></main>
+
+<nav class="tabbar">
+  <button data-tab="home"  class="act"><span class="ico">▦</span>總覽</button>
+  <button data-tab="rent"><span class="ico">￦</span>租金</button>
+  <button data-tab="power"><span class="ico">⌁</span>水電</button>
+  <button data-tab="fix"><span class="ico">✦</span>設備</button>
+  <button data-tab="more"><span class="ico">≡</span>更多</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =====================================================================
+   出租房屋管理系統 v1.0
+   架構：本機優先（localStorage）＋ Supabase 雲端同步（離線佇列）
+   ===================================================================== */
+"use strict";
+
+const TABLES = ['buildings','rooms','tenants','leases','rent_payments',
+  'meter_readings','electricity_bills','fixtures','replacements','utility_bills'];
+const UNIT_PRICE = 4;          // 電費每度
+const RENT_DUE_DAY = 10;       // 每月 10 日為繳款期限
+const LEASE_ALERT_DAYS = 60;   // 租約到期提醒天數
+const LAMP_ALERT_DAYS = 30;    // 耗材更換提醒天數
+const SPIKE_RATIO = 1.25;      // 總錶帳單暴增門檻（+25%）
+
+/* ---------- 狀態 ---------- */
+let S = {
+  cfg:{url:'',key:''}, dark:false,
+  store:Object.fromEntries(TABLES.map(t=>[t,[]])),
+  queue:[],                       // 離線待同步 [{op,table,row/id}]
+  month: new Date().toISOString().slice(0,7),
+};
+let sb = null, tab='home', powerTab='read', moreTab='rooms', charts={};
+
+function persist(){ localStorage.setItem('rms1', JSON.stringify(
+  {cfg:S.cfg,dark:S.dark,store:S.store,queue:S.queue,month:S.month})); }
+function restore(){
+  try{ const d = JSON.parse(localStorage.getItem('rms1')||'null');
+    if(d){ S={...S,...d}; S.store=Object.assign(Object.fromEntries(TABLES.map(t=>[t,[]])),d.store||{});} }catch(e){}
+}
+const uid = ()=> crypto.randomUUID();
+const today = ()=> new Date().toISOString().slice(0,10);
+const fmt$ = n => 'NT$ ' + (n||0).toLocaleString('zh-TW');
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const daysBetween=(a,b)=>Math.round((new Date(b)-new Date(a))/86400000);
+
+/* ---------- 雲端同步 ---------- */
+function connectSB(){
+  if(S.cfg.url && S.cfg.key && window.supabase){
+    try{ sb = window.supabase.createClient(S.cfg.url.trim(), S.cfg.key.trim()); }
+    catch(e){ sb=null; }
+  } else sb=null;
+  updateDot();
+}
+function updateDot(){
+  const d=document.getElementById('syncDot');
+  d.className='sync-dot '+(!sb?'off':(S.queue.length?'q':'on'));
+  d.title = !sb?'未連線雲端':(S.queue.length?`待同步 ${S.queue.length} 筆`:'雲端已同步');
+}
+async function pullAll(){
+  if(!sb) return false;
+  try{
+    for(const t of TABLES){
+      const {data,error} = await sb.from(t).select('*');
+      if(error) throw error;
+      S.store[t]=data||[];
+    }
+    persist(); return true;
+  }catch(e){ console.warn('pull失敗',e); return false; }
+}
+async function pushRow(table,row){
+  if(!sb){ S.queue.push({op:'upsert',table,row}); persist(); updateDot(); return; }
+  const {error} = await sb.from(table).upsert(row);
+  if(error){ S.queue.push({op:'upsert',table,row}); persist(); }
+  updateDot();
+}
+async function pushDel(table,id){
+  if(!sb){ S.queue.push({op:'del',table,id}); persist(); updateDot(); return; }
+  const {error} = await sb.from(table).delete().eq('id',id);
+  if(error){ S.queue.push({op:'del',table,id}); persist(); }
+  updateDot();
+}
+async function flushQueue(){
+  if(!sb||!S.queue.length) return;
+  const q=[...S.queue]; S.queue=[];
+  for(const j of q){
+    try{
+      if(j.op==='upsert'){ const {error}=await sb.from(j.table).upsert(j.row); if(error) S.queue.push(j); }
+      else { const {error}=await sb.from(j.table).delete().eq('id',j.id); if(error) S.queue.push(j); }
+    }catch(e){ S.queue.push(j); }
+  }
+  persist(); updateDot();
+  if(!S.queue.length) toast('離線資料已全部同步 ✓');
+}
+window.addEventListener('online',flushQueue);
+setInterval(flushQueue, 45000);
+
+/* ---------- 資料操作 ---------- */
+function upsert(table,row){
+  row.updated_at=new Date().toISOString();
+  const arr=S.store[table], i=arr.findIndex(r=>r.id===row.id);
+  if(i>=0) arr[i]=row; else arr.push(row);
+  persist(); pushRow(table,row);
+}
+function del(table,id){
+  S.store[table]=S.store[table].filter(r=>r.id!==id);
+  persist(); pushDel(table,id);
+}
+const T = t => S.store[t];
+const byId=(t,id)=>T(t).find(r=>r.id===id);
+
+/* ---------- 業務邏輯 ---------- */
+function roomLabel(r){ const b=byId('buildings',r.building_id); return (b?b.name+' ':'')+r.room_no; }
+function activeLease(roomId){ return T('leases').find(l=>l.room_id===roomId&&l.active); }
+function tenantOf(roomId){ const l=activeLease(roomId); return l?byId('tenants',l.tenant_id):null; }
+function monthlyTotal(r){ return (r.monthly_rent||0)+(r.water_fee||0)+(r.gas_fee||0); }
+
+// 確保本月份所有出租房都有租金紀錄
+function ensurePayments(period){
+  T('rooms').filter(r=>r.status==='出租中').forEach(r=>{
+    const l=activeLease(r.id); if(!l) return;
+    if(!T('rent_payments').some(p=>p.lease_id===l.id&&p.period===period)){
+      upsert('rent_payments',{id:uid(),lease_id:l.id,room_id:r.id,period,
+        amount:monthlyTotal(r),paid:false,paid_date:null,note:''});
+    }
+  });
+}
+function isOverdue(p){
+  if(p.paid) return false;
+  const now=new Date(), cur=now.toISOString().slice(0,7);
+  if(p.period<cur) return true;
+  if(p.period===cur && now.getDate()>RENT_DUE_DAY) return true;
+  return false;
+}
+function arrears(leaseId){ // 欠繳期數（含本月已逾期）
+  return T('rent_payments').filter(p=>p.lease_id===leaseId&&isOverdue(p)).length;
+}
+function lastReading(roomId,kinds){
+  const rs=T('meter_readings').filter(m=>m.room_id===roomId&&(!kinds||kinds.includes(m.kind)))
+    .sort((a,b)=>a.reading_date.localeCompare(b.reading_date)||a.updated_at.localeCompare(b.updated_at));
+  return rs[rs.length-1]||null;
+}
+// 耗材：預期壽命（天）
+function expectedDays(f){
+  if(f.expected_days>0) return f.expected_days;
+  if(f.rated_hours>0&&f.daily_hours>0) return Math.round(f.rated_hours/f.daily_hours);
+  return 0;
+}
+// 實際平均壽命（≥2 段更換間隔時採用）
+function actualAvgDays(f){
+  const rs=T('replacements').filter(x=>x.fixture_id===f.id)
+    .map(x=>x.replaced_date).sort();
+  if(rs.length<2) return 0;
+  let sum=0; for(let i=1;i<rs.length;i++) sum+=daysBetween(rs[i-1],rs[i]);
+  return Math.round(sum/(rs.length-1));
+}
+function fixtureRemain(f){
+  if(!f.last_replaced) return null;
+  const exp = actualAvgDays(f)||expectedDays(f);
+  if(!exp) return null;
+  return {exp, used:daysBetween(f.last_replaced,today()), remain: exp - daysBetween(f.last_replaced,today())};
+}
+// 總錶帳單暴增偵測：與同物件同類前 3 期平均比
+function spikeCheck(bill){
+  const hist=T('utility_bills').filter(u=>u.building_id===bill.building_id&&u.kind===bill.kind&&u.id!==bill.id
+      &&u.updated_at<bill.updated_at).sort((a,b)=>b.updated_at.localeCompare(a.updated_at)).slice(0,3);
+  if(!hist.length) return null;
+  const avg=hist.reduce((s,u)=>s+u.amount,0)/hist.length;
+  return bill.amount>avg*SPIKE_RATIO ? {avg:Math.round(avg),ratio:(bill.amount/avg)} : null;
+}
+
+/* ---------- 種子資料 ---------- */
+function seedData(){
+  if(T('buildings').length){ toast('已有資料，未重複建立'); return; }
+  const mk=(name)=>{const b={id:uid(),name,note:''};upsert('buildings',b);return b.id;};
+  const b1=mk('299-1號'), b2=mk('301巷1號'), b3=mk('228號'), b4=mk('226號');
+  const R=(bid,no,fl,type,rent,st)=>upsert('rooms',{id:uid(),building_id:bid,room_no:no,floor:fl,
+    room_type:type,monthly_rent:rent,water_fee:type==='倉庫'?0:250,gas_fee:type==='倉庫'?0:250,
+    status:st,note:''});
+  // 299-1號
+  R(b1,'1F 店面','1F','店面',19000,'出租中');
+  ['201','202','203'].forEach((n,i)=>R(b1,'2F-'+n,'2F','雅房',4750,i<2?'出租中':'空房'));
+  ['301','302','303','304'].forEach((n,i)=>R(b1,'3F-'+n,'3F','雅房',4750,i<2?'出租中':'空房'));
+  ['401','402','403','404'].forEach((n,i)=>R(b1,'4F-'+n,'4F','雅房',4750,i<2?'出租中':'空房'));
+  // 301巷1號
+  R(b2,'2F 套房','2F','套房',6500,'出租中');
+  R(b2,'2F 倉庫','2F','倉庫',0,'自用');
+  R(b2,'3F 套房','3F','套房',6500,'出租中');
+  R(b2,'4F 套房','4F','套房',6500,'出租中');
+  // 228號
+  R(b3,'4F 倉庫','4F','倉庫',0,'自用');
+  R(b3,'4F 套房A','4F','套房',6500,'出租中');
+  R(b3,'4F 套房B','4F','套房',6500,'空房');
+  R(b3,'4F 雅房','4F','雅房',4750,'出租中');
+  // 226號
+  R(b4,'4F 套房A','4F','套房',6500,'出租中');
+  R(b4,'4F 套房B','4F','套房',6500,'空房');
+  // 燈點（15 支 1 尺燈管，24h 常亮）
+  const F=(bid,loc)=>upsert('fixtures',{id:uid(),building_id:bid,location:loc,item_type:'燈管',
+    model:'1尺燈管',daily_hours:24,rated_hours:15000,expected_days:0,last_replaced:today(),note:''});
+  ['2樓樓梯','2樓公共空間','3樓樓梯','3樓公共空間','4樓樓梯','4樓公共空間'].forEach(l=>F(b1,l));
+  ['1樓走廊','1樓樓梯×2','2樓樓梯×2','3樓樓梯×2','4樓樓梯'].forEach(l=>F(b2,l));
+  F(b3,'4樓走道');
+  // 熱水器電池（週期預設 365 天，可自行修改）
+  const H=(bid,loc)=>upsert('fixtures',{id:uid(),building_id:bid,location:loc,item_type:'熱水器電池',
+    model:'1號電池×2',daily_hours:0,rated_hours:0,expected_days:365,last_replaced:today(),note:''});
+  ['2樓','3樓','4樓'].forEach(l=>H(b1,l+'熱水器'));
+  ['2樓','3樓','4樓'].forEach(l=>H(b2,l+'熱水器'));
+  H(b3,'4樓熱水器');
+  toast('種子資料建立完成（房間狀態請自行核對調整）');
+  render();
+}
+
+/* ---------- UI 基礎 ---------- */
+const V=document.getElementById('view');
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg;
+  t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2600); }
+function modal(html){
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal">${html}</div>`;
+  bg.addEventListener('click',e=>{ if(e.target===bg) bg.remove(); });
+  document.body.appendChild(bg); return bg;
+}
+function confirmBox(msg,cb){
+  const m=modal(`<h3>確認</h3><p style="margin-bottom:14px">${esc(msg)}</p>
+    <div class="row"><button class="btn warn grow" id="cy">確定</button>
+    <button class="btn sub grow" id="cn">取消</button></div>`);
+  m.querySelector('#cy').onclick=()=>{m.remove();cb();};
+  m.querySelector('#cn').onclick=()=>m.remove();
+}
+document.querySelectorAll('nav.tabbar button').forEach(b=>b.onclick=()=>{
+  tab=b.dataset.tab;
+  document.querySelectorAll('nav.tabbar button').forEach(x=>x.classList.toggle('act',x===b));
+  render();
+});
+document.getElementById('darkBtn').onclick=()=>{
+  S.dark=!S.dark; document.documentElement.dataset.theme=S.dark?'dark':'light'; persist();
+};
+
+/* =====================================================================
+   視圖：總覽（鑰匙牆）
+   ===================================================================== */
+const STATUS_COLOR={'出租中':'var(--green)','空房':'var(--blue)','整修中':'var(--amber)','自用':'var(--violet)'};
+function viewHome(){
+  ensurePayments(S.month);
+  const rooms=T('rooms');
+  const rented=rooms.filter(r=>r.status==='出租中');
+  const pays=T('rent_payments').filter(p=>p.period===S.month);
+  const paid=pays.filter(p=>p.paid).length;
+  const overdue=pays.filter(isOverdue).length;
+  const income=pays.filter(p=>p.paid).reduce((s,p)=>s+p.amount,0);
+
+  // 警示收集
+  let alerts=[];
+  T('leases').filter(l=>l.active&&l.end_date).forEach(l=>{
+    const d=daysBetween(today(),l.end_date);
+    if(d<=LEASE_ALERT_DAYS){
+      const r=byId('rooms',l.room_id),t=byId('tenants',l.tenant_id);
+      alerts.push({red:d<0,txt:`租約${d<0?'已到期 '+(-d)+' 天':'剩 '+d+' 天'}：${r?roomLabel(r):''} ${t?t.name:''}`});
+    }});
+  T('fixtures').forEach(f=>{
+    const x=fixtureRemain(f); if(x&&x.remain<=LAMP_ALERT_DAYS){
+      const b=byId('buildings',f.building_id);
+      alerts.push({red:x.remain<0,txt:`${f.item_type}${x.remain<0?'已超期':'預計 '+x.remain+' 天後需更換'}：${b?b.name:''} ${f.location}`});
+    }});
+  T('utility_bills').slice().sort((a,b)=>b.updated_at.localeCompare(a.updated_at)).slice(0,6).forEach(u=>{
+    const sp=spikeCheck(u); if(sp){ const b=byId('buildings',u.building_id);
+      alerts.push({red:true,txt:`⚠ ${b?b.name:''}${u.kind}費暴增：${u.period_label} ${fmt$(u.amount)}（前期平均 ${fmt$(sp.avg)}，+${Math.round((sp.ratio-1)*100)}%）可能漏${u.kind==='水'?'水':'損'}`});
+    }});
+  if(overdue) alerts.unshift({red:true,txt:`本月有 ${overdue} 間逾期未繳（期限：每月 ${RENT_DUE_DAY} 日）`});
+
+  let html=`
+  <div class="card"><div class="stats">
+    <div><div class="stat">${rented.length}<span class="muted">/${rooms.filter(r=>r.room_type!=='倉庫').length}</span></div><div class="stat-lb">出租中</div></div>
+    <div><div class="stat" style="color:var(--green)">${paid}</div><div class="stat-lb">本月已繳</div></div>
+    <div><div class="stat" style="color:${overdue?'var(--red)':'var(--ink)'}">${overdue}</div><div class="stat-lb">逾期</div></div>
+    <div><div class="stat money" style="font-size:20px">${fmt$(income)}</div><div class="stat-lb">本月已收</div></div>
+  </div></div>`;
+  html+=alerts.map(a=>`<div class="alert ${a.red?'red':''}">${esc(a.txt)}</div>`).join('');
+
+  T('buildings').forEach(b=>{
+    const rs=rooms.filter(r=>r.building_id===b.id);
+    if(!rs.length) return;
+    html+=`<div class="bldg-title">${esc(b.name)}</div><div class="keywall">`;
+    rs.forEach(r=>{
+      const t=tenantOf(r.id);
+      const l=activeLease(r.id);
+      const p=l?pays.find(x=>x.lease_id===l.id):null;
+      let st, col;
+      if(r.status!=='出租中'){ st=r.status; col=STATUS_COLOR[r.status]||'var(--ink2)'; }
+      else if(p&&p.paid){ st='已繳 ✓'; col='var(--green)'; }
+      else if(p&&isOverdue(p)){ st='逾期未繳'; col='var(--red)'; }
+      else { st='未繳'; col='var(--amber)'; }
+      html+=`<button class="keycard" style="--kc:${col}" onclick="roomDetail('${r.id}')">
+        <span class="rn">${esc(r.room_no)}</span>
+        <span class="tt">${t?esc(t.name):esc(r.room_type)}</span>
+        <span class="st">${st}</span></button>`;
+    });
+    html+=`</div>`;
+  });
+  if(!rooms.length) html+=`<div class="card empty">尚無資料。請到「更多 → 設定」連線 Supabase，或建立種子資料開始使用。</div>`;
+  V.innerHTML=html;
+}
+
+/* ---------- 房間詳情 ---------- */
+window.roomDetail=function(id){
+  const r=byId('rooms',id); if(!r) return;
+  const l=activeLease(id), t=l?byId('tenants',l.tenant_id):null;
+  const reads=T('meter_readings').filter(m=>m.room_id===id).sort((a,b)=>b.reading_date.localeCompare(a.reading_date)).slice(0,5);
+  const pays=T('rent_payments').filter(p=>p.room_id===id).sort((a,b)=>b.period.localeCompare(a.period)).slice(0,6);
+  const arr=l?arrears(l.id):0;
+  modal(`<h3>${esc(roomLabel(r))} <span class="pill gr">${esc(r.room_type)}</span></h3>
+    <div class="card">
+      <div class="row"><span class="grow">月租</span><span class="money">${fmt$(r.monthly_rent)}</span></div>
+      <div class="row"><span class="grow">水費／瓦斯</span><span>${fmt$(r.water_fee)}／${fmt$(r.gas_fee)}</span></div>
+      <div class="row"><span class="grow">狀態</span><span class="pill ${r.status==='出租中'?'g':'b'}">${esc(r.status)}</span></div>
+      ${arr?`<div class="alert red" style="margin-top:8px">累計欠繳 ${arr} 期</div>`:''}
+    </div>
+    ${t?`<div class="card"><h2>房客</h2>
+      <div class="li"><div class="main"><div class="t1">${esc(t.name)}</div>
+      <div class="t2">${esc(t.phone)}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div></div>
+      ${t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}</div>
+      ${l?`<div class="t2" style="padding:4px 2px">租約：${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}${l.prepaid_months?`　預繳 ${l.prepaid_months} 月`:''}</div>`:''}
+    </div>`:''}
+    ${pays.length?`<div class="card"><h2>近期繳費</h2>${pays.map(p=>`
+      <div class="li"><div class="main"><div class="t1">${p.period}</div>
+      <div class="t2">${fmt$(p.amount)}${p.paid_date?'　'+p.paid_date+' 收':''}</div></div>
+      <span class="pill ${p.paid?'g':isOverdue(p)?'r':'a'}">${p.paid?'已繳':isOverdue(p)?'逾期':'未繳'}</span></div>`).join('')}</div>`:''}
+    ${reads.length?`<div class="card"><h2>近期電錶</h2>${reads.map(m=>`
+      <div class="li"><div class="main"><div class="t1">${m.value} 度</div>
+      <div class="t2">${m.reading_date}　${esc(m.kind)}</div></div>
+      ${m.photo_url?`<a class="btn sm sub" href="${esc(m.photo_url)}" target="_blank">照片</a>`:''}</div>`).join('')}</div>`:''}
+    <button class="btn sub" style="width:100%" onclick="this.closest('.modal-bg').remove();openRoomForm('${r.id}')">編輯房間資料</button>`);
+};
+
+/* =====================================================================
+   視圖：租金
+   ===================================================================== */
+function viewRent(){
+  ensurePayments(S.month);
+  const pays=T('rent_payments').filter(p=>p.period===S.month)
+    .sort((a,b)=>roomLabel(byId('rooms',a.room_id)||{}).localeCompare(roomLabel(byId('rooms',b.room_id)||{}),'zh-Hant'));
+  const total=pays.reduce((s,p)=>s+p.amount,0), got=pays.filter(p=>p.paid).reduce((s,p)=>s+p.amount,0);
+  let html=`<div class="card"><div class="row">
+      <input type="month" id="mPick" value="${S.month}" style="max-width:170px">
+      <div class="grow"></div>
+      <div style="text-align:right"><div class="money" style="font-size:19px">${fmt$(got)} <span class="muted">/ ${fmt$(total)}</span></div>
+      <div class="muted">本期已收 / 應收</div></div></div>
+    <div class="bar-wrap" style="margin-top:8px"><div class="bar" style="width:${total?Math.round(got/total*100):0}%"></div></div>
+  </div><div class="card">`;
+  if(!pays.length) html+=`<div class="empty">本月無出租中房間的租金紀錄</div>`;
+  pays.forEach(p=>{
+    const r=byId('rooms',p.room_id), l=byId('leases',p.lease_id), t=l?byId('tenants',l.tenant_id):null;
+    const od=isOverdue(p), arr=l?arrears(l.id):0;
+    html+=`<div class="li">
+      <div class="main"><div class="t1">${esc(r?roomLabel(r):'?')} <span class="muted">${t?esc(t.name):''}</span></div>
+      <div class="t2"><span class="money">${fmt$(p.amount)}</span>${p.paid&&p.paid_date?'　'+p.paid_date+' 收訖':''}${arr>1?`　<span style="color:var(--red)">欠 ${arr} 期</span>`:''}</div></div>
+      ${p.paid
+        ? `<button class="btn sm sub" onclick="genRentReceipt('${p.id}')">憑證</button>
+           <button class="btn sm sub" onclick="togglePaid('${p.id}',false)">改未繳</button>`
+        : `<span class="pill ${od?'r':'a'}">${od?'逾期':'未繳'}</span>
+           <button class="btn sm" onclick="togglePaid('${p.id}',true)">收款</button>`}
+    </div>`;
+  });
+  html+=`</div>`;
+  // 欠繳總表
+  const debt=T('leases').filter(l=>l.active).map(l=>({l,n:arrears(l.id)})).filter(x=>x.n>0);
+  if(debt.length){
+    html+=`<div class="card"><h2>欠繳追蹤</h2>${debt.map(({l,n})=>{
+      const r=byId('rooms',l.room_id),t=byId('tenants',l.tenant_id);
+      return `<div class="li"><div class="main"><div class="t1">${esc(r?roomLabel(r):'')} ${t?esc(t.name):''}</div>
+        <div class="t2">累計欠繳 ${n} 期${t&&t.phone?'　'+esc(t.phone):''}</div></div>
+        ${t&&t.phone?`<a class="btn sm warn" href="tel:${esc(t.phone)}">催繳</a>`:''}</div>`;}).join('')}</div>`;
+  }
+  V.innerHTML=html;
+  document.getElementById('mPick').onchange=e=>{S.month=e.target.value;persist();render();};
+}
+window.togglePaid=function(id,val){
+  const p=byId('rent_payments',id); if(!p)return;
+  p.paid=val; p.paid_date=val?today():null; upsert('rent_payments',p);
+  toast(val?'已登記收款 ✓':'已改為未繳'); render();
+};
+
+/* ---------- 對帳憑證圖片（Canvas） ---------- */
+function drawReceipt(lines,title,fname){
+  const W=640, rowH=52, H=210+lines.length*rowH+150;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const c=cv.getContext('2d');
+  c.fillStyle='#FBFAF5'; c.fillRect(0,0,W,H);
+  c.fillStyle='#2D5A4A'; c.fillRect(0,0,W,92);
+  c.fillStyle='#fff'; c.font='bold 30px "Noto Serif TC",serif'; c.textAlign='center';
+  c.fillText(title,W/2,58);
+  c.textAlign='left'; c.fillStyle='#26312C';
+  let y=150;
+  lines.forEach(([k,v,strong])=>{
+    c.font='17px sans-serif'; c.fillStyle='#5F6B64'; c.fillText(k,54,y);
+    c.font=(strong?'bold 26px':'20px')+' "Noto Serif TC",Georgia,serif';
+    c.fillStyle=strong?'#B54A35':'#26312C'; c.textAlign='right'; c.fillText(v,W-54,y+(strong?4:0));
+    c.textAlign='left';
+    c.strokeStyle='#E4E0D2'; c.beginPath(); c.moveTo(54,y+18); c.lineTo(W-54,y+18); c.stroke();
+    y+=rowH;
+  });
+  // 收訖章
+  c.strokeStyle='#B54A35'; c.lineWidth=3; c.beginPath(); c.arc(W-130,y+46,44,0,7); c.stroke();
+  c.fillStyle='#B54A35'; c.font='bold 24px sans-serif'; c.textAlign='center';
+  c.fillText('已收訖',W-130,y+54); c.textAlign='left';
+  c.fillStyle='#5F6B64'; c.font='14px sans-serif';
+  c.fillText('產生日期：'+today(),54,y+50);
+  c.fillText('出租房屋管理系統',54,y+74);
+  const a=document.createElement('a'); a.download=fname; a.href=cv.toDataURL('image/png'); a.click();
+  toast('憑證圖片已下載');
+}
+window.genRentReceipt=function(pid){
+  const p=byId('rent_payments',pid); const r=byId('rooms',p.room_id);
+  const l=byId('leases',p.lease_id); const t=l?byId('tenants',l.tenant_id):null;
+  drawReceipt([
+    ['房間',roomLabel(r)],['房客',t?t.name:'—'],['期間',p.period],
+    ['房租',fmt$(r.monthly_rent)],['水費',fmt$(r.water_fee)],['瓦斯費',fmt$(r.gas_fee)],
+    ['收款日',p.paid_date||today()],
+    ['合計',fmt$(p.amount),1],
+  ],'房租對帳憑證',`房租憑證_${r.room_no}_${p.period}.png`);
+};
+window.genElecReceipt=function(bid){
+  const b=byId('electricity_bills',bid); const r=byId('rooms',b.room_id);
+  const t=tenantOf(r.id);
+  drawReceipt([
+    ['房間',roomLabel(r)],['房客',t?t.name:'—'],['結算期間',b.period_label],
+    ['起始讀數',String(b.start_reading)+' 度'],['本期讀數',String(b.end_reading)+' 度'],
+    ['用電度數',String(b.usage_kwh)+' 度'],['單價','每度 '+b.unit_price+' 元'],
+    ['電費合計',fmt$(b.amount),1],
+  ],'電費結算憑證',`電費憑證_${r.room_no}_${b.period_label}.png`);
+};
+
+/* =====================================================================
+   視圖：水電（抄錶／結算／總錶／趨勢）
+   ===================================================================== */
+function viewPower(){
+  let html=`<div class="seg">
+    ${[['read','抄錶'],['bill','電費結算'],['util','總錶帳單'],['trend','趨勢圖']].map(([k,n])=>
+      `<button class="${powerTab===k?'act':''}" onclick="setPowerTab('${k}')">${n}</button>`).join('')}
+  </div>`;
+  if(powerTab==='read') html+=powerRead();
+  if(powerTab==='bill') html+=powerBill();
+  if(powerTab==='util') html+=powerUtil();
+  if(powerTab==='trend') html+=`<div class="card"><h2>各房半年用電（度）</h2>
+      <select id="trRoom" style="margin-bottom:10px"></select>
+      <canvas id="ch1" class="chart" height="230"></canvas></div>
+    <div class="card"><h2>總錶帳單走勢</h2>
+      <div class="row" style="margin-bottom:10px">
+        <select id="trBldg" class="grow"></select><select id="trKind" class="grow">
+        <option>水</option><option>電</option><option>瓦斯</option></select></div>
+      <canvas id="ch2" class="chart" height="230"></canvas></div>`;
+  V.innerHTML=html;
+  if(powerTab==='trend') initTrend();
+}
+window.setPowerTab=k=>{powerTab=k;render();};
+
+function powerRead(){
+  const rooms=T('rooms').filter(r=>r.room_type!=='倉庫').sort((a,b)=>roomLabel(a).localeCompare(roomLabel(b),'zh-Hant'));
+  let h=`<div class="card"><div class="muted" style="margin-bottom:6px">
+    每半年「結算抄錶」一次；期中可做「快抄」監測異常，不列入結算。輸入值小於上次讀數會提醒。</div></div><div class="card">`;
+  rooms.forEach(r=>{
+    const lr=lastReading(r.id);
+    h+=`<div class="li"><div class="main"><div class="t1">${esc(roomLabel(r))}</div>
+      <div class="t2">上次：${lr?lr.value+' 度（'+lr.reading_date+'・'+esc(lr.kind)+'）':'尚無紀錄'}</div></div>
+      <button class="btn sm" onclick="openReading('${r.id}')">抄錶</button></div>`;
+  });
+  return h+`</div>`;
+}
+window.openReading=function(roomId){
+  const r=byId('rooms',roomId); const lr=lastReading(roomId);
+  const m=modal(`<h3>抄錶：${esc(roomLabel(r))}</h3>
+    <div class="muted">上次讀數：${lr?lr.value+' 度（'+lr.reading_date+'）':'無'}</div>
+    <label>本次讀數（度）</label><input type="number" inputmode="decimal" id="rv" step="0.1">
+    <label>日期</label><input type="date" id="rd" value="${today()}">
+    <label>類型</label><select id="rk"><option>結算</option><option>快抄</option><option>退租</option></select>
+    <label>錶面照片（存證）</label><input type="file" id="rp" accept="image/*" capture="environment">
+    <div class="row" style="margin-top:16px"><button class="btn grow" id="rs">儲存讀數</button></div>`);
+  m.querySelector('#rs').onclick=async()=>{
+    const v=parseFloat(m.querySelector('#rv').value);
+    if(isNaN(v)){toast('請輸入讀數');return;}
+    const doSave=async()=>{
+      let url='';
+      const f=m.querySelector('#rp').files[0];
+      if(f){ url=await uploadPhoto(roomId,f); }
+      upsert('meter_readings',{id:uid(),room_id:roomId,reading_date:m.querySelector('#rd').value,
+        value:v,kind:m.querySelector('#rk').value,photo_url:url,note:''});
+      // 快抄異常比對
+      if(lr){
+        const days=Math.max(1,daysBetween(lr.reading_date,m.querySelector('#rd').value));
+        const daily=(v-lr.value)/days;
+        const hist=T('meter_readings').filter(x=>x.room_id===roomId).sort((a,b)=>a.reading_date.localeCompare(b.reading_date));
+        if(hist.length>=3){
+          const h0=hist[0], hd=Math.max(1,daysBetween(h0.reading_date,lr.reading_date));
+          const base=(lr.value-h0.value)/hd;
+          if(base>0&&daily>base*1.6) toast(`⚠ ${r.room_no} 日均用電 ${daily.toFixed(1)} 度，高於歷史 ${base.toFixed(1)} 度，請留意設備異常`);
+        }
+      }
+      m.remove(); toast('讀數已儲存 ✓'); render();
+    };
+    if(lr&&v<lr.value){
+      confirmBox(`輸入值 ${v} 小於上次讀數 ${lr.value}，可能輸入錯誤或錶已歸零更換。確定儲存？`,doSave);
+    } else doSave();
+  };
+};
+async function uploadPhoto(roomId,file){
+  if(!sb){ toast('未連線雲端，照片略過（讀數仍會儲存）'); return ''; }
+  try{
+    const blob=await shrink(file,1280);
+    const path=`${roomId}/${today()}_${Date.now()}.jpg`;
+    const {error}=await sb.storage.from('meter-photos').upload(path,blob,{contentType:'image/jpeg'});
+    if(error) throw error;
+    return sb.storage.from('meter-photos').getPublicUrl(path).data.publicUrl;
+  }catch(e){ toast('照片上傳失敗（請確認已建立 meter-photos 儲存桶）'); return ''; }
+}
+function shrink(file,max){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      const sc=Math.min(1,max/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');
+      cv.width=img.width*sc; cv.height=img.height*sc;
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      cv.toBlob(b=>res(b),'image/jpeg',.82);
+    };
+    img.src=URL.createObjectURL(file);
+  });
+}
+
+function powerBill(){
+  const bills=T('electricity_bills').slice().sort((a,b)=>b.updated_at.localeCompare(a.updated_at));
+  let h=`<div class="card">
+    <div class="muted" style="margin-bottom:8px">依各房「最近兩筆結算抄錶」自動計算：度數 × 每度 ${UNIT_PRICE} 元。</div>
+    <div class="row"><input id="plabel" placeholder="結算期間名稱，例：2026上半年" class="grow">
+    <button class="btn" onclick="makeBills()">建立本期結算</button></div></div>`;
+  const groups={};
+  bills.forEach(b=>{(groups[b.period_label]=groups[b.period_label]||[]).push(b);});
+  Object.keys(groups).forEach(lb=>{
+    const g=groups[lb], tot=g.reduce((s,b)=>s+(b.amount||0),0);
+    h+=`<div class="card"><h2>${esc(lb)}　<span class="money">${fmt$(tot)}</span></h2>`;
+    g.forEach(b=>{
+      const r=byId('rooms',b.room_id);
+      h+=`<div class="li"><div class="main">
+        <div class="t1">${esc(r?roomLabel(r):'?')}</div>
+        <div class="t2">${b.start_reading} → ${b.end_reading}｜${b.usage_kwh} 度｜<span class="money">${fmt$(b.amount)}</span></div></div>
+        ${b.paid?`<span class="pill g">已收</span><button class="btn sm sub" onclick="genElecReceipt('${b.id}')">憑證</button>`
+          :`<button class="btn sm" onclick="payBill('${b.id}')">收款</button>`}
+        <button class="btn sm sub" onclick="delBill('${b.id}')">刪</button></div>`;
+    });
+    h+=`</div>`;
+  });
+  if(!bills.length) h+=`<div class="card empty">尚無結算紀錄。先完成兩次「結算抄錶」後，即可建立結算單。</div>`;
+  return h;
+}
+window.makeBills=function(){
+  const lb=document.getElementById('plabel').value.trim();
+  if(!lb){toast('請先輸入結算期間名稱');return;}
+  if(T('electricity_bills').some(b=>b.period_label===lb)){toast('此期間名稱已存在');return;}
+  let n=0;
+  T('rooms').filter(r=>r.room_type!=='倉庫').forEach(r=>{
+    const rs=T('meter_readings').filter(m=>m.room_id===r.id&&['結算','退租'].includes(m.kind))
+      .sort((a,b)=>a.reading_date.localeCompare(b.reading_date));
+    if(rs.length<2) return;
+    const a=rs[rs.length-2], b=rs[rs.length-1];
+    const use=Math.round((b.value-a.value)*10)/10;
+    if(use<0) return;
+    upsert('electricity_bills',{id:uid(),room_id:r.id,period_label:lb,start_reading:a.value,
+      end_reading:b.value,usage_kwh:use,unit_price:UNIT_PRICE,amount:Math.round(use*UNIT_PRICE),
+      paid:false,paid_date:null});
+    n++;
+  });
+  toast(n?`已建立 ${n} 間結算單 ✓`:'沒有可結算的房間（每間需至少兩筆結算抄錶）');
+  render();
+};
+window.payBill=function(id){const b=byId('electricity_bills',id);b.paid=true;b.paid_date=today();
+  upsert('electricity_bills',b);toast('電費已收款 ✓');render();};
+window.delBill=function(id){confirmBox('刪除這筆結算單？',()=>{del('electricity_bills',id);render();});};
+
+function powerUtil(){
+  const bills=T('utility_bills').slice().sort((a,b)=>b.updated_at.localeCompare(a.updated_at));
+  let h=`<div class="card"><div class="muted" style="margin-bottom:8px">
+    記錄繳給台水、台電、瓦斯行的<b>總錶帳單</b>。租客水瓦斯收固定月費，若總錶暴增（＋25%）代表可能漏水漏氣，系統會警示。</div>
+    <button class="btn" style="width:100%" onclick="openUtilForm()">＋ 新增總錶帳單</button></div><div class="card">`;
+  if(!bills.length) h+=`<div class="empty">尚無帳單紀錄</div>`;
+  bills.forEach(u=>{
+    const b=byId('buildings',u.building_id), sp=spikeCheck(u);
+    h+=`<div class="li"><div class="main">
+      <div class="t1">${esc(b?b.name:'')}｜${esc(u.kind)}費　<span class="money">${fmt$(u.amount)}</span>
+        ${sp?`<span class="pill r">暴增 +${Math.round((sp.ratio-1)*100)}%</span>`:''}</div>
+      <div class="t2">${esc(u.period_label)}${u.usage_amount?'　'+u.usage_amount+' 度':''}${sp?'　前期平均 '+fmt$(sp.avg):''}</div></div>
+      <button class="btn sm sub" onclick="delUtil('${u.id}')">刪</button></div>`;
+  });
+  return h+`</div>`;
+}
+window.openUtilForm=function(){
+  const m=modal(`<h3>新增總錶帳單</h3>
+    <label>物件</label><select id="ub">${T('buildings').map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select>
+    <label>類別</label><select id="uk"><option>水</option><option>電</option><option>瓦斯</option></select>
+    <label>帳單期間（例：2026-05/06）</label><input id="up" placeholder="2026-05/06">
+    <label>金額（元）</label><input id="ua" type="number" inputmode="numeric">
+    <label>度數（可留空）</label><input id="uu" type="number" inputmode="decimal">
+    <button class="btn" style="width:100%;margin-top:16px" id="us">儲存</button>`);
+  m.querySelector('#us').onclick=()=>{
+    const amt=parseInt(m.querySelector('#ua').value);
+    if(!amt){toast('請輸入金額');return;}
+    const row={id:uid(),building_id:m.querySelector('#ub').value,kind:m.querySelector('#uk').value,
+      period_label:m.querySelector('#up').value||today().slice(0,7),amount:amt,
+      usage_amount:parseFloat(m.querySelector('#uu').value)||null,note:''};
+    upsert('utility_bills',row);
+    const sp=spikeCheck(row);
+    m.remove(); render();
+    toast(sp?`⚠ 比前期平均高 ${Math.round((sp.ratio-1)*100)}%，建議檢查漏${row.kind==='水'?'水':'損'}`:'帳單已儲存 ✓');
+  };
+};
+window.delUtil=id=>confirmBox('刪除這筆帳單？',()=>{del('utility_bills',id);render();});
+
+function initTrend(){
+  Object.values(charts).forEach(c=>c.destroy()); charts={};
+  const selR=document.getElementById('trRoom');
+  const rooms=T('rooms').filter(r=>r.room_type!=='倉庫');
+  selR.innerHTML=rooms.map(r=>`<option value="${r.id}">${esc(roomLabel(r))}</option>`).join('');
+  const drawR=()=>{
+    const bills=T('electricity_bills').filter(b=>b.room_id===selR.value)
+      .sort((a,b)=>a.updated_at.localeCompare(b.updated_at));
+    if(charts.c1)charts.c1.destroy();
+    charts.c1=new Chart(document.getElementById('ch1'),{type:'bar',
+      data:{labels:bills.map(b=>b.period_label),
+        datasets:[{label:'用電度數',data:bills.map(b=>b.usage_kwh),
+          backgroundColor:getComputedStyle(document.documentElement).getPropertyValue('--green')}]},
+      options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+  };
+  selR.onchange=drawR; if(rooms.length)drawR();
+  const selB=document.getElementById('trBldg'), selK=document.getElementById('trKind');
+  selB.innerHTML=T('buildings').map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  const drawU=()=>{
+    const us=T('utility_bills').filter(u=>u.building_id===selB.value&&u.kind===selK.value)
+      .sort((a,b)=>a.updated_at.localeCompare(b.updated_at));
+    if(charts.c2)charts.c2.destroy();
+    charts.c2=new Chart(document.getElementById('ch2'),{type:'line',
+      data:{labels:us.map(u=>u.period_label),
+        datasets:[{label:'金額',data:us.map(u=>u.amount),tension:.3,
+          borderColor:getComputedStyle(document.documentElement).getPropertyValue('--blue'),fill:false}]},
+      options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+  };
+  selB.onchange=drawU; selK.onchange=drawU; if(T('buildings').length)drawU();
+}
+
+/* =====================================================================
+   視圖：設備（燈管／耗材週期）
+   ===================================================================== */
+function viewFix(){
+  let html=`<div class="card"><div class="row">
+    <div class="muted grow">預測邏輯：初期用「額定壽命 ÷ 每日時數」估算；累積兩次以上實際更換後，改採實際平均壽命。</div>
+    <button class="btn sm" onclick="openFixForm()">＋ 新增</button></div></div>`;
+  T('buildings').forEach(b=>{
+    const fs=T('fixtures').filter(f=>f.building_id===b.id);
+    if(!fs.length) return;
+    html+=`<div class="bldg-title">${esc(b.name)}</div><div class="card">`;
+    fs.forEach(f=>{
+      const x=fixtureRemain(f);
+      const avg=actualAvgDays(f);
+      let pill='', bar=0;
+      if(x){ bar=Math.min(100,Math.max(0,Math.round(x.used/x.exp*100)));
+        pill=x.remain<0?`<span class="pill r">超期 ${-x.remain} 天</span>`
+          :x.remain<=LAMP_ALERT_DAYS?`<span class="pill a">剩 ${x.remain} 天</span>`
+          :`<span class="pill g">剩 ${x.remain} 天</span>`; }
+      html+=`<div class="li" style="flex-wrap:wrap">
+        <div class="main"><div class="t1">${esc(f.location)} <span class="muted">${esc(f.item_type)}・${esc(f.model)}</span></div>
+        <div class="t2">上次更換 ${f.last_replaced||'未設定'}${x?'｜預期 '+x.exp+' 天':''}${avg?'（實測平均 '+avg+' 天）':''}</div>
+        ${x?`<div class="bar-wrap" style="margin-top:5px"><div class="bar" style="width:${bar}%;background:${x.remain<0?'var(--red)':x.remain<=LAMP_ALERT_DAYS?'var(--amber)':'var(--green)'}"></div></div>`:''}</div>
+        ${pill}
+        <button class="btn sm" onclick="doReplace('${f.id}')">更換</button>
+        <button class="btn sm sub" onclick="openFixForm('${f.id}')">編</button></div>`;
+    });
+    html+=`</div>`;
+  });
+  // 庫存備料建議
+  const soon=T('fixtures').map(f=>({f,x:fixtureRemain(f)})).filter(o=>o.x&&o.x.remain<=90);
+  if(soon.length){
+    const cnt={};
+    soon.forEach(o=>cnt[o.f.model]=(cnt[o.f.model]||0)+1);
+    html+=`<div class="card"><h2>90 天內備料建議</h2>${Object.entries(cnt).map(([m,n])=>
+      `<div class="li"><div class="main"><div class="t1">${esc(m)}</div></div><span class="pill b">建議備 ${n} 個</span></div>`).join('')}</div>`;
+  }
+  if(!T('fixtures').length) html+=`<div class="card empty">尚無設備資料</div>`;
+  V.innerHTML=html;
+}
+window.doReplace=function(id){
+  const f=byId('fixtures',id);
+  confirmBox(`登記「${f.location}」今日已更換？`,()=>{
+    upsert('replacements',{id:uid(),fixture_id:id,replaced_date:today(),note:''});
+    f.last_replaced=today(); upsert('fixtures',f);
+    toast('更換已登記，週期重新起算 ✓'); render();
+  });
+};
+window.openFixForm=function(id){
+  const f=id?byId('fixtures',id):{id:uid(),building_id:T('buildings')[0]?.id,location:'',item_type:'燈管',
+    model:'1尺燈管',daily_hours:24,rated_hours:15000,expected_days:0,last_replaced:today(),note:''};
+  const m=modal(`<h3>${id?'編輯':'新增'}設備</h3>
+    <label>物件</label><select id="fb">${T('buildings').map(b=>`<option value="${b.id}" ${b.id===f.building_id?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
+    <label>位置</label><input id="fl" value="${esc(f.location)}" placeholder="例：2樓樓梯間">
+    <label>類型</label><select id="ft">${['燈管','熱水器電池','其他'].map(t=>`<option ${t===f.item_type?'selected':''}>${t}</option>`).join('')}</select>
+    <label>型號</label><input id="fm" value="${esc(f.model)}">
+    <div class="row"><div class="grow"><label>每日時數</label><input id="fh" type="number" value="${f.daily_hours}"></div>
+    <div class="grow"><label>額定壽命(小時)</label><input id="fr" type="number" value="${f.rated_hours}"></div></div>
+    <label>或直接指定預期天數（0＝自動計算）</label><input id="fe" type="number" value="${f.expected_days}">
+    <label>上次更換日</label><input id="fd" type="date" value="${f.last_replaced||''}">
+    <div class="row" style="margin-top:16px"><button class="btn grow" id="fs">儲存</button>
+    ${id?`<button class="btn warn" id="fx">刪除</button>`:''}</div>`);
+  m.querySelector('#fs').onclick=()=>{
+    Object.assign(f,{building_id:m.querySelector('#fb').value,location:m.querySelector('#fl').value,
+      item_type:m.querySelector('#ft').value,model:m.querySelector('#fm').value,
+      daily_hours:+m.querySelector('#fh').value,rated_hours:+m.querySelector('#fr').value,
+      expected_days:+m.querySelector('#fe').value,last_replaced:m.querySelector('#fd').value||null});
+    if(!f.location){toast('請輸入位置');return;}
+    upsert('fixtures',f); m.remove(); toast('已儲存 ✓'); render();
+  };
+  if(id) m.querySelector('#fx').onclick=()=>confirmBox('刪除此設備與其更換紀錄？',()=>{
+    T('replacements').filter(r=>r.fixture_id===id).forEach(r=>del('replacements',r.id));
+    del('fixtures',id); m.remove(); render();
+  });
+};
+
+/* =====================================================================
+   視圖：更多（房間／房客租約／設定匯出）
+   ===================================================================== */
+function viewMore(){
+  let html=`<div class="seg">
+    ${[['rooms','房間'],['tenants','房客租約'],['set','設定・匯出']].map(([k,n])=>
+      `<button class="${moreTab===k?'act':''}" onclick="setMoreTab('${k}')">${n}</button>`).join('')}
+  </div>`;
+  if(moreTab==='rooms') html+=moreRooms();
+  if(moreTab==='tenants') html+=moreTenants();
+  if(moreTab==='set') html+=moreSet();
+  V.innerHTML=html;
+}
+window.setMoreTab=k=>{moreTab=k;render();};
+
+function moreRooms(){
+  let h=`<div class="card"><button class="btn" style="width:100%" onclick="openRoomForm()">＋ 新增房間</button></div>`;
+  T('buildings').forEach(b=>{
+    const rs=T('rooms').filter(r=>r.building_id===b.id);
+    if(!rs.length)return;
+    h+=`<div class="bldg-title">${esc(b.name)}</div><div class="card">`;
+    rs.forEach(r=>{
+      h+=`<div class="li"><div class="main"><div class="t1">${esc(r.room_no)} <span class="pill gr">${esc(r.room_type)}</span></div>
+        <div class="t2"><span class="money">${fmt$(r.monthly_rent)}</span>／月　${esc(r.status)}</div></div>
+        <button class="btn sm sub" onclick="openRoomForm('${r.id}')">編輯</button></div>`;
+    });
+    h+=`</div>`;
+  });
+  return h;
+}
+window.openRoomForm=function(id){
+  const r=id?byId('rooms',id):{id:uid(),building_id:T('buildings')[0]?.id,room_no:'',floor:'',
+    room_type:'雅房',monthly_rent:4750,water_fee:250,gas_fee:250,status:'空房',note:''};
+  const m=modal(`<h3>${id?'編輯':'新增'}房間</h3>
+    <label>物件</label><select id="rb">${T('buildings').map(b=>`<option value="${b.id}" ${b.id===r.building_id?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
+    <label>房號</label><input id="rn" value="${esc(r.room_no)}">
+    <label>房型</label><select id="rt">${['店面','雅房','套房','倉庫'].map(t=>`<option ${t===r.room_type?'selected':''}>${t}</option>`).join('')}</select>
+    <div class="row"><div class="grow"><label>月租</label><input id="rr" type="number" value="${r.monthly_rent}"></div>
+    <div class="grow"><label>水費</label><input id="rw" type="number" value="${r.water_fee}"></div>
+    <div class="grow"><label>瓦斯</label><input id="rg" type="number" value="${r.gas_fee}"></div></div>
+    <label>狀態</label><select id="rst">${['出租中','空房','整修中','自用'].map(t=>`<option ${t===r.status?'selected':''}>${t}</option>`).join('')}</select>
+    <label>備註</label><input id="rnote" value="${esc(r.note)}">
+    <div class="row" style="margin-top:16px"><button class="btn grow" id="rs2">儲存</button>
+    ${id?`<button class="btn warn" id="rx">刪除</button>`:''}</div>`);
+  m.querySelector('#rs2').onclick=()=>{
+    Object.assign(r,{building_id:m.querySelector('#rb').value,room_no:m.querySelector('#rn').value,
+      room_type:m.querySelector('#rt').value,monthly_rent:+m.querySelector('#rr').value,
+      water_fee:+m.querySelector('#rw').value,gas_fee:+m.querySelector('#rg').value,
+      status:m.querySelector('#rst').value,note:m.querySelector('#rnote').value});
+    if(!r.room_no){toast('請輸入房號');return;}
+    upsert('rooms',r); m.remove(); toast('已儲存 ✓'); render();
+  };
+  if(id) m.querySelector('#rx').onclick=()=>confirmBox('刪除此房間？（相關紀錄將保留但失去連結）',()=>{
+    del('rooms',id); m.remove(); render();});
+};
+
+function moreTenants(){
+  let h=`<div class="card"><button class="btn" style="width:100%" onclick="openLeaseForm()">＋ 新租約（含房客）</button></div><div class="card"><h2>進行中租約</h2>`;
+  const ls=T('leases').filter(l=>l.active);
+  if(!ls.length) h+=`<div class="empty">尚無租約</div>`;
+  ls.forEach(l=>{
+    const r=byId('rooms',l.room_id), t=byId('tenants',l.tenant_id);
+    const d=l.end_date?daysBetween(today(),l.end_date):null;
+    h+=`<div class="li"><div class="main">
+      <div class="t1">${esc(r?roomLabel(r):'?')}　${t?esc(t.name):''}</div>
+      <div class="t2">${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}
+        ${d!==null&&d<=LEASE_ALERT_DAYS?`<span class="pill ${d<0?'r':'a'}">${d<0?'已到期':'剩 '+d+' 天'}</span>`:''}</div></div>
+      <button class="btn sm sub" onclick="openLeaseForm('${l.id}')">編輯</button>
+      <button class="btn sm warn" onclick="moveOut('${l.id}')">退租</button></div>`;
+  });
+  h+=`</div><div class="card"><h2>房客名冊</h2>`;
+  if(!T('tenants').length) h+=`<div class="empty">尚無房客資料</div>`;
+  T('tenants').forEach(t=>{
+    h+=`<div class="li"><div class="main"><div class="t1">${esc(t.name)}</div>
+      <div class="t2">${esc(t.phone)}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div></div>
+      ${t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}
+      <button class="btn sm sub" onclick="openTenantForm('${t.id}')">編輯</button></div>`;
+  });
+  return h+`</div>`;
+}
+window.openTenantForm=function(id){
+  const t=id?byId('tenants',id):{id:uid(),name:'',phone:'',emergency_name:'',emergency_phone:'',note:''};
+  const m=modal(`<h3>${id?'編輯':'新增'}房客</h3>
+    <label>姓名</label><input id="tn" value="${esc(t.name)}">
+    <label>電話</label><input id="tp" value="${esc(t.phone)}" inputmode="tel">
+    <label>緊急聯絡人</label><input id="te" value="${esc(t.emergency_name)}">
+    <label>緊急聯絡電話</label><input id="tep" value="${esc(t.emergency_phone)}" inputmode="tel">
+    <label>備註</label><input id="tnote" value="${esc(t.note)}">
+    <button class="btn" style="width:100%;margin-top:16px" id="ts">儲存</button>`);
+  m.querySelector('#ts').onclick=()=>{
+    Object.assign(t,{name:m.querySelector('#tn').value,phone:m.querySelector('#tp').value,
+      emergency_name:m.querySelector('#te').value,emergency_phone:m.querySelector('#tep').value,
+      note:m.querySelector('#tnote').value});
+    if(!t.name){toast('請輸入姓名');return;}
+    upsert('tenants',t); m.remove(); toast('已儲存 ✓'); render();
+  };
+};
+window.openLeaseForm=function(id){
+  const l=id?byId('leases',id):{id:uid(),room_id:'',tenant_id:'',start_date:today(),end_date:'',
+    deposit:0,prepaid_months:0,active:true,note:''};
+  const vac=T('rooms').filter(r=>r.room_type!=='倉庫'&&(r.status!=='出租中'||r.id===l.room_id));
+  const m=modal(`<h3>${id?'編輯租約':'新租約'}</h3>
+    <label>房間</label><select id="lr">${vac.map(r=>`<option value="${r.id}" ${r.id===l.room_id?'selected':''}>${esc(roomLabel(r))}（${esc(r.status)}）</option>`).join('')}</select>
+    <label>房客</label><div class="row"><select id="lt" class="grow">
+      <option value="">— 選擇既有房客 —</option>
+      ${T('tenants').map(t=>`<option value="${t.id}" ${t.id===l.tenant_id?'selected':''}>${esc(t.name)}</option>`).join('')}</select>
+      <button class="btn sm sub" id="lnew">新房客</button></div>
+    <div class="row"><div class="grow"><label>起租日</label><input id="ls" type="date" value="${l.start_date||''}"></div>
+    <div class="grow"><label>到期日</label><input id="le" type="date" value="${l.end_date||''}"></div></div>
+    <div class="row"><div class="grow"><label>押金（元）</label><input id="ld" type="number" value="${l.deposit}"></div>
+    <div class="grow"><label>預繳月數</label><input id="lp" type="number" value="${l.prepaid_months}"></div></div>
+    <button class="btn" style="width:100%;margin-top:16px" id="lsv">儲存租約</button>`);
+  m.querySelector('#lnew').onclick=()=>{m.remove();openTenantForm();};
+  m.querySelector('#lsv').onclick=()=>{
+    const rid=m.querySelector('#lr').value, tid=m.querySelector('#lt').value;
+    if(!rid||!tid){toast('請選擇房間與房客');return;}
+    Object.assign(l,{room_id:rid,tenant_id:tid,start_date:m.querySelector('#ls').value,
+      end_date:m.querySelector('#le').value||null,deposit:+m.querySelector('#ld').value,
+      prepaid_months:+m.querySelector('#lp').value});
+    upsert('leases',l);
+    const r=byId('rooms',rid); if(r.status!=='出租中'){r.status='出租中';upsert('rooms',r);}
+    m.remove(); toast('租約已儲存，房間狀態更新為出租中 ✓'); render();
+  };
+};
+window.moveOut=function(leaseId){
+  const l=byId('leases',leaseId); const r=byId('rooms',l.room_id); const t=byId('tenants',l.tenant_id);
+  const lr=lastReading(l.room_id);
+  const m=modal(`<h3>退租結算：${esc(r?roomLabel(r):'')} ${t?esc(t.name):''}</h3>
+    <div class="muted">上次電錶讀數：${lr?lr.value+' 度（'+lr.reading_date+'）':'無'}</div>
+    <label>退租日電錶讀數</label><input id="mv" type="number" inputmode="decimal" step="0.1">
+    <label>退租日期</label><input id="md" type="date" value="${today()}">
+    <div class="card" id="mcalc" style="margin-top:12px"></div>
+    <button class="btn warn" style="width:100%;margin-top:8px" id="mok">確認退租</button>`);
+  const calc=()=>{
+    const v=parseFloat(m.querySelector('#mv').value);
+    let elec=0, txt='';
+    if(!isNaN(v)&&lr){ elec=Math.max(0,Math.round((v-lr.value)*UNIT_PRICE));
+      txt=`未結電費：${(v-lr.value).toFixed(1)} 度 × ${UNIT_PRICE} 元 = <b class="money">${fmt$(elec)}</b><br>`; }
+    m.querySelector('#mcalc').innerHTML=`${txt}押金 <b class="money">${fmt$(l.deposit)}</b> － 未結電費 = 
+      應退 <b class="money" style="color:var(--green)">${fmt$(Math.max(0,l.deposit-elec))}</b>
+      <div class="muted" style="margin-top:4px">（如有欠繳租金或損壞扣款，請再自行扣除）</div>`;
+  };
+  m.querySelector('#mv').oninput=calc; calc();
+  m.querySelector('#mok').onclick=()=>{
+    const v=parseFloat(m.querySelector('#mv').value);
+    if(!isNaN(v)) upsert('meter_readings',{id:uid(),room_id:l.room_id,
+      reading_date:m.querySelector('#md').value,value:v,kind:'退租',photo_url:'',note:'退租結算'});
+    l.active=false; l.moveout_reading=isNaN(v)?null:v; upsert('leases',l);
+    r.status='空房'; upsert('rooms',r);
+    m.remove(); toast('退租完成，房間已改為空房 ✓'); render();
+  };
+};
+
+function moreSet(){
+  return `<div class="card"><h2>雲端連線（Supabase）</h2>
+    <label>Project URL</label><input id="su" value="${esc(S.cfg.url)}" placeholder="https://xxxx.supabase.co">
+    <label>API Key（anon 或 sb_publishable_ 開頭之新格式金鑰）</label>
+    <input id="sk" value="${esc(S.cfg.key)}" placeholder="sb_publishable_...">
+    <div class="row" style="margin-top:14px">
+      <button class="btn grow" onclick="saveConn()">儲存並連線</button>
+      <button class="btn sub" onclick="doPull()">從雲端重新載入</button></div>
+    <div class="muted" style="margin-top:8px">狀態：<span id="connSt">${sb?'已連線':'未連線'}</span>${S.queue.length?`　待同步 ${S.queue.length} 筆`:''}</div>
+  </div>
+  <div class="card"><h2>資料</h2>
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+      <button class="btn sub" onclick="seedData()">建立種子資料（4 處物件・19 房・燈點）</button>
+      <button class="btn sub" onclick="exportCSV()">匯出全部資料（CSV 備份）</button>
+    </div>
+    <div class="muted" style="margin-top:8px">CSV 每張資料表各一檔，建議每月匯出保存一次。</div>
+  </div>
+  <div class="card"><h2>系統參數</h2>
+    <div class="li"><div class="main"><div class="t1">電費單價</div></div><span class="money">每度 ${UNIT_PRICE} 元</span></div>
+    <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
+    <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
+    <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
+    <div class="muted" style="margin-top:6px">v1.0　參數如需調整請告知修改。</div>
+  </div>`;
+}
+window.saveConn=async function(){
+  S.cfg.url=document.getElementById('su').value.trim();
+  S.cfg.key=document.getElementById('sk').value.trim();
+  persist(); connectSB();
+  if(!sb){toast('請填入 URL 與金鑰');return;}
+  const {error}=await sb.from('buildings').select('id').limit(1);
+  if(error){ toast('連線失敗：'+error.message); sb=null; updateDot(); }
+  else { toast('連線成功 ✓ 正在載入雲端資料…'); await pullAll(); await flushQueue(); render(); }
+};
+window.doPull=async function(){
+  if(!sb){toast('尚未連線');return;}
+  confirmBox('從雲端重新載入會以雲端資料覆蓋本機快取（不影響雲端）。繼續？',async()=>{
+    const ok=await pullAll(); toast(ok?'已載入雲端最新資料 ✓':'載入失敗'); render();
+  });
+};
+window.exportCSV=function(){
+  TABLES.forEach(t=>{
+    const rows=T(t); if(!rows.length) return;
+    const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+    const csv='\uFEFF'+[keys.join(','),...rows.map(r=>keys.map(k=>
+      `"${String(r[k]??'').replace(/"/g,'""')}"`).join(','))].join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    a.download=`${t}_${today()}.csv`; a.click();
+  });
+  toast('CSV 匯出完成');
+};
+
+/* ---------- 路由 ---------- */
+function render(){
+  Object.values(charts).forEach(c=>c.destroy()); charts={};
+  if(tab==='home') viewHome();
+  else if(tab==='rent') viewRent();
+  else if(tab==='power') viewPower();
+  else if(tab==='fix') viewFix();
+  else viewMore();
+}
+
+/* ---------- 啟動 ---------- */
+restore();
+document.documentElement.dataset.theme=S.dark?'dark':'light';
+connectSB();
+render();
+if(sb){ pullAll().then(ok=>{ if(ok){flushQueue();render();} }); }
+</script>
+</body>
+</html>
