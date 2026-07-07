@@ -49,7 +49,18 @@ label{font-size:13px;color:var(--ink2);display:block;margin:10px 0 4px}
 header{position:sticky;top:0;z-index:30;background:var(--green);color:#fff;
   padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px;
   box-shadow:0 2px 8px rgba(0,0,0,.15)}
-header h1{font-size:18px;font-weight:700;letter-spacing:.05em;flex:1}
+header h1{font-size:18px;font-weight:700;letter-spacing:.05em;flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+.title-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.month-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800;letter-spacing:.02em;line-height:1.25;
+  background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.24)}
+.month-badge.off-month{background:#F4D06F;color:#26312C;border-color:#FFE39A;box-shadow:0 0 0 2px rgba(244,208,111,.18)}
+@media(max-width:380px){
+  header{gap:7px;padding-left:12px;padding-right:12px}
+  header h1{font-size:16px;gap:6px}
+  .month-badge{font-size:11px;padding:3px 7px}
+  .month-badge.off-month{font-size:10.5px}
+}
 .sync-dot{width:10px;height:10px;border-radius:50%;background:#9aa;flex:none}
 .sync-dot.on{background:#7BE0A8}.sync-dot.q{background:#F0C36A}.sync-dot.off{background:#8b8b8b}
 .icon-btn{background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:10px;
@@ -160,7 +171,7 @@ canvas.chart{width:100%!important}
 <body>
 
 <header>
-  <h1>出租房屋管理</h1>
+  <h1><span class="title-text">出租房屋管理</span><span class="month-badge" id="monthBadge" aria-label="目前查看月份"></span></h1>
   <span class="sync-dot off" id="syncDot" title="同步狀態"></span>
   <button class="icon-btn" id="darkBtn" aria-label="切換深色模式">◐</button>
 </header>
@@ -179,7 +190,7 @@ canvas.chart{width:100%!important}
 
 <script>
 /* =====================================================================
-   出租房屋管理系統 v1.2.4
+   出租房屋管理系統 v1.2.5
    架構：本機優先（localStorage）＋ Supabase 雲端同步（離線佇列）
    ===================================================================== */
 "use strict";
@@ -261,6 +272,19 @@ function restore(){
 const uid = ()=> crypto.randomUUID();
 const today = ()=> new Date().toISOString().slice(0,10);
 const fmt$ = n => 'NT$ ' + (n||0).toLocaleString('zh-TW');
+const currentMonth = () => new Date().toISOString().slice(0,7);
+function zhMonthLabel(ym){
+  const [y,m]=String(ym||currentMonth()).split('-');
+  return `${y}年${parseInt(m||'1',10)}月`;
+}
+function updateMonthBadge(){
+  const b=document.getElementById('monthBadge'); if(!b) return;
+  const isNow=S.month===currentMonth();
+  b.classList.toggle('off-month',!isNow);
+  b.textContent=isNow ? zhMonthLabel(S.month) : `非本月｜${zhMonthLabel(S.month)}`;
+  b.title=isNow ? '目前查看當月份' : '注意：目前查看的不是本月份';
+  b.setAttribute('aria-label', b.title + '：' + zhMonthLabel(S.month));
+}
 const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const daysBetween=(a,b)=>Math.round((new Date(b)-new Date(a))/86400000);
 
@@ -1327,7 +1351,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.2.4　iPhone 底部導航遮擋修正；切換頁面自動回到最上方。</div>
+    <div class="muted" style="margin-top:6px">v1.2.5　標題旁顯示月份；非當月份以「非本月」警示標籤提醒，保留 iPhone 底部遮擋與切換頁面回頂修正。</div>
   </div>`;
 }
 window.saveConn=async function(){
@@ -1360,6 +1384,7 @@ window.exportCSV=function(){
 
 /* ---------- 路由 ---------- */
 function render(){
+  updateMonthBadge();
   Object.values(charts).forEach(c=>c.destroy()); charts={};
   if(tab==='home') viewHome();
   else if(tab==='rent') viewRent();
