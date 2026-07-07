@@ -98,6 +98,11 @@ main::after{content:"";display:block;height:calc(var(--tabbar-height) + env(safe
 .pill.a{background:var(--amber-soft);color:var(--amber)}
 .pill.b{background:var(--blue-soft);color:var(--blue)}
 .pill.gr{background:var(--card2);color:var(--ink2)}
+.pill.law{background:var(--red-soft);color:var(--red);border:1px solid rgba(181,74,53,.18)}
+.month-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.month-tools input[type=month]{max-width:170px;flex:1;min-width:150px}
+.month-tools .btn{white-space:nowrap}
+@media(max-width:420px){.month-tools{align-items:stretch}.month-tools input[type=month]{max-width:none}.month-tools .btn{flex:1}}
 .muted{color:var(--ink2);font-size:13px}
 .money{font-family:var(--serif);font-weight:700;font-variant-numeric:tabular-nums}
 .divider{height:1px;background:var(--line);margin:10px 0}
@@ -190,7 +195,7 @@ canvas.chart{width:100%!important}
 
 <script>
 /* =====================================================================
-   出租房屋管理系統 v1.2.5
+   出租房屋管理系統 v1.2.6
    架構：本機優先（localStorage）＋ Supabase 雲端同步（離線佇列）
    ===================================================================== */
 "use strict";
@@ -358,6 +363,40 @@ function roomLabel(r){ const b=byId('buildings',r.building_id); return (b?b.name
 function activeLease(roomId){ return T('leases').find(l=>l.room_id===roomId&&l.active); }
 function tenantOf(roomId){ const l=activeLease(roomId); return l?byId('tenants',l.tenant_id):null; }
 function monthlyTotal(r){ return (r.monthly_rent||0)+(r.water_fee||0)+(r.gas_fee||0); }
+const DISPUTE_STAGES=['調解委員會','民事訴訟','法院調解','強制執行','債權憑證'];
+const DISPUTE_TAG_START='【爭議處理】';
+const DISPUTE_TAG_END='【/爭議處理】';
+function disputeInfo(l){
+  if(!l) return null;
+  if(l.dispute_stage) return {stage:l.dispute_stage,note:l.dispute_note||'',date:l.dispute_updated||''};
+  const note=String(l.note||'');
+  const a=note.indexOf(DISPUTE_TAG_START), b=note.indexOf(DISPUTE_TAG_END);
+  if(a<0||b<a) return null;
+  const block=note.slice(a+DISPUTE_TAG_START.length,b).trim();
+  const data={stage:'',note:'',date:''};
+  block.split('｜').forEach(part=>{
+    const i=part.indexOf('：');
+    if(i>0){ data[part.slice(0,i).trim()]=part.slice(i+1).trim(); }
+  });
+  const stage=data['程序']||'';
+  if(!stage) return null;
+  return {stage,note:data['備註']||'',date:data['更新']||''};
+}
+function disputeBadge(l,small=false){
+  const d=disputeInfo(l); if(!d) return '';
+  return `<span class="pill law" title="爭議處理程序${d.date?'｜'+d.date:''}">${small?'爭議':'爭議處理'}：${esc(d.stage)}</span>`;
+}
+function saveDisputeToLease(l,stage,note){
+  let base=String(l.note||'');
+  const a=base.indexOf(DISPUTE_TAG_START), b=base.indexOf(DISPUTE_TAG_END);
+  if(a>=0&&b>=a) base=(base.slice(0,a)+base.slice(b+DISPUTE_TAG_END.length)).trim();
+  if(stage){
+    const block=`${DISPUTE_TAG_START}程序：${stage}｜更新：${today()}${note?'｜備註：'+note:''}${DISPUTE_TAG_END}`;
+    base=base ? `${base}
+${block}` : block;
+  }
+  l.note=base;
+}
 
 // 確保本月份所有出租房都有租金紀錄（僅限租約有效期間內）
 function ensurePayments(period){
@@ -591,11 +630,12 @@ function viewHome(){
       else { st='未繳'; col='var(--amber)'; }
       const nm=t?t.name:(r.status==='出租中'?'未登記房客':r.status);
       const av=t?t.name.charAt(0):({'空房':'空','整修中':'修','自用':'自','停用':'停'}[r.status]||r.room_type.charAt(0));
+      const law=disputeBadge(l,true);
       html+=`<button class="keycard" style="--kc:${col}" onclick="roomDetail('${r.id}')">
         <span class="kc-row"><span class="kc-av">${esc(av)}</span>
         <span class="kc-info"><span class="kc-nm">${esc(nm)}</span>
         <span class="kc-rn">${esc(r.room_no)}</span></span></span>
-        <span class="st">${st}</span></button>`;
+        <span class="st">${st}</span>${law?`<span>${law}</span>`:''}</button>`;
     });
     html+=`</div>`;
   });
@@ -619,8 +659,9 @@ window.roomDetail=function(id){
     </div>
     ${t?`<div class="card"><h2>房客</h2>
       <div class="li"><div class="main"><div class="t1">${esc(t.name)}　${remindHint(t)}</div>
-      <div class="t2">${esc(t.phone)||'未登記電話'}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div></div>
+      <div class="t2">${esc(t.phone)||'未登記電話'}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div>${l&&disputeBadge(l)?`<div style="margin-top:5px">${disputeBadge(l)}</div>`:''}</div>
       ${t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}
+      ${l?`<button class="btn sm sub" onclick="this.closest('.modal-bg').remove();openDisputeForm('${l.id}')">訴訟程序</button>`:''}
       <button class="btn sm sub" onclick="this.closest('.modal-bg').remove();openTenantForm('${t.id}')">編輯</button></div>
       ${l?`<div class="t2" style="padding:4px 2px">租約：${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}${l.prepaid_months?`　預繳 ${l.prepaid_months} 月`:''}${l.contract_no?'　契約 '+esc(l.contract_no):''}</div>`:''}
     </div>`:''}
@@ -645,8 +686,8 @@ function viewRent(){
     .sort((a,b)=>roomLabel(byId('rooms',a.room_id)||{}).localeCompare(roomLabel(byId('rooms',b.room_id)||{}),'zh-Hant'));
   const total=pays.reduce((s,p)=>s+p.amount,0), got=pays.filter(p=>p.paid).reduce((s,p)=>s+p.amount,0);
   let html=`<div class="card"><div class="row">
-      <input type="month" id="mPick" value="${S.month}" style="max-width:170px">
-      <div class="grow"></div>
+      <div class="month-tools grow"><input type="month" id="mPick" value="${S.month}">
+      <button class="btn sm sub" id="mNow" ${S.month===currentMonth()?'disabled':''}>回到本月</button></div>
       <div style="text-align:right"><div class="money" style="font-size:19px">${fmt$(got)} <span class="muted">/ ${fmt$(total)}</span></div>
       <div class="muted">本期已收 / 應收</div></div></div>
     <div class="bar-wrap" style="margin-top:8px"><div class="bar" style="width:${total?Math.round(got/total*100):0}%"></div></div>
@@ -662,7 +703,7 @@ function viewRent(){
     const owed=l?T('rent_payments').filter(x=>x.lease_id===l.id&&!x.paid&&isOverdue(x)&&x.period!==p.period)
       .sort((a,b)=>a.period.localeCompare(b.period)):[];
     html+=`<div class="li" style="flex-wrap:wrap">
-      <div class="main"><div class="t1">${esc(r?roomLabel(r):'?')} <span class="muted">${t?esc(t.name):''}</span></div>
+      <div class="main"><div class="t1">${esc(r?roomLabel(r):'?')} <span class="muted">${t?esc(t.name):''}</span> ${disputeBadge(l,true)}</div>
       <div class="t2"><span class="money">${fmt$(p.amount)}</span>${p.paid&&p.paid_date?'　'+p.paid_date+' 收訖':''}</div>
       ${owed.length?`<div class="t2" style="margin-top:5px">欠 ${owed.length} 期：${owed.map(o=>
         `<span class="pill r chip" style="margin-right:4px" onclick="openPayDetail('${o.id}')">${o.period}</span>`).join('')}</div>`:''}</div>
@@ -679,12 +720,14 @@ function viewRent(){
   if(debt.length){
     html+=`<div class="card"><h2>欠繳追蹤</h2>${debt.map(({l,n})=>{
       const r=byId('rooms',l.room_id),t=byId('tenants',l.tenant_id);
-      return `<div class="li"><div class="main"><div class="t1">${esc(r?roomLabel(r):'')} ${t?esc(t.name):''}　${t?remindHint(t):''}</div>
+      return `<div class="li"><div class="main"><div class="t1">${esc(r?roomLabel(r):'')} ${t?esc(t.name):''}　${disputeBadge(l,true)}　${t?remindHint(t):''}</div>
         <div class="t2">累計欠繳 ${n} 期${t&&t.phone?'　'+esc(t.phone):'　未登記電話'}</div></div>
         ${t?contactBtns(t,''):''}</div>`;}).join('')}</div>`;
   }
   V.innerHTML=html;
-  document.getElementById('mPick').onchange=e=>{S.month=e.target.value;persist();render();};
+  document.getElementById('mPick').onchange=e=>{S.month=e.target.value;persist();render();scrollPageTop();};
+  const mNow=document.getElementById('mNow');
+  if(mNow) mNow.onclick=()=>{S.month=currentMonth();persist();render();scrollPageTop();toast('已回到本月');};
 }
 window.togglePaid=function(id,val){
   const p=byId('rent_payments',id); if(!p)return;
@@ -1184,15 +1227,17 @@ function moreTenants(){
     const rt=remainText(l.end_date);
     h+=`<div class="li"><div class="main">
       <div class="t1">${esc(r?roomLabel(r):'?')}　${t?esc(t.name):''}
-        ${rt?`<span class="pill ${d<0?'r':d<=LEASE_ALERT_DAYS?'a':'g'}" style="margin-left:4px">${rt}</span>`:'<span class="pill gr">未設到期日</span>'}</div>
+        ${rt?`<span class="pill ${d<0?'r':d<=LEASE_ALERT_DAYS?'a':'g'}" style="margin-left:4px">${rt}</span>`:'<span class="pill gr">未設到期日</span>'} ${disputeBadge(l,true)}</div>
       <div class="t2">${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}${l.contract_no?'　契約 '+esc(l.contract_no):''}</div></div>
+      <button class="btn sm sub" onclick="openDisputeForm('${l.id}')">訴訟程序</button>
       <button class="btn sm sub" onclick="openLeaseForm('${l.id}')">編輯</button>
       <button class="btn sm warn" onclick="moveOut('${l.id}')">退租</button></div>`;
   });
   h+=`</div><div class="card"><h2>房客名冊</h2>`;
   if(!T('tenants').length) h+=`<div class="empty">尚無房客資料</div>`;
   T('tenants').forEach(t=>{
-    h+=`<div class="li"><div class="main"><div class="t1">${esc(t.name)}</div>
+    const al=T('leases').find(l=>l.active&&l.tenant_id===t.id);
+    h+=`<div class="li"><div class="main"><div class="t1">${esc(t.name)} ${disputeBadge(al,true)}</div>
       <div class="t2">${esc(t.phone)}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div></div>
       ${t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}
       <button class="btn sm sub" onclick="openTenantForm('${t.id}')">編輯</button></div>`;
@@ -1297,6 +1342,25 @@ window.openLeaseForm=function(id){
     upsert('leases',l);
     const r=byId('rooms',rid); if(r.status!=='出租中'){r.status='出租中';upsert('rooms',r);}
     m.remove(); toast('租約已儲存，房間狀態更新為出租中 ✓'); render();
+  };
+};
+window.openDisputeForm=function(leaseId){
+  const l=byId('leases',leaseId); if(!l){toast('查無租約');return;}
+  const r=byId('rooms',l.room_id), t=byId('tenants',l.tenant_id), d=disputeInfo(l)||{stage:'',note:'',date:''};
+  const m=modal(`<h3>訴訟／爭議處理：${esc(r?roomLabel(r):'')} ${t?esc(t.name):''}</h3>
+    <div class="alert">這裡只是管理標記，方便你辨識該房客已進入爭議處理；不會自動產生法律文件。</div>
+    <label>目前程序</label><select id="ds"><option value="">無／解除標記</option>
+      ${DISPUTE_STAGES.map(x=>`<option value="${x}" ${x===d.stage?'selected':''}>${x}</option>`).join('')}</select>
+    <label>備註</label><textarea id="dn" rows="4" placeholder="例：已送調解、案號、承辦股別、下次開庭日…">${esc(d.note||'')}</textarea>
+    ${d.date?`<div class="muted" style="margin-top:8px">上次更新：${esc(d.date)}</div>`:''}
+    <div class="row" style="margin-top:16px"><button class="btn grow" id="dsv">儲存標記</button>
+    <button class="btn sub grow" id="dcl">解除標記</button></div>`);
+  m.querySelector('#dsv').onclick=()=>{
+    saveDisputeToLease(l,m.querySelector('#ds').value,m.querySelector('#dn').value.trim());
+    upsert('leases',l); m.remove(); toast(l.dispute_stage||disputeInfo(l)?'已更新爭議處理標記':'已解除爭議處理標記'); render();
+  };
+  m.querySelector('#dcl').onclick=()=>{
+    saveDisputeToLease(l,'',''); upsert('leases',l); m.remove(); toast('已解除爭議處理標記'); render();
   };
 };
 window.moveOut=function(leaseId){
