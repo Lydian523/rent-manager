@@ -195,7 +195,7 @@ canvas.chart{width:100%!important}
 
 <script>
 /* =====================================================================
-   出租房屋管理系統 v1.2.6
+   出租房屋管理系統 v1.2.7
    架構：本機優先（localStorage）＋ Supabase 雲端同步（離線佇列）
    ===================================================================== */
 "use strict";
@@ -396,6 +396,56 @@ function saveDisputeToLease(l,stage,note){
 ${block}` : block;
   }
   l.note=base;
+}
+
+const MOVEOUT_TAG_START='【退租追蹤】';
+const MOVEOUT_TAG_END='【/退租追蹤】';
+function taggedInfo(note,start,end){
+  note=String(note||'');
+  const a=note.indexOf(start), b=note.indexOf(end);
+  if(a<0||b<a) return null;
+  const block=note.slice(a+start.length,b).trim();
+  const data={};
+  block.split('｜').forEach(part=>{
+    const i=part.indexOf('：');
+    if(i>0) data[part.slice(0,i).trim()]=part.slice(i+1).trim();
+  });
+  return data;
+}
+function stripTaggedBlock(note,start,end){
+  let base=String(note||'');
+  const a=base.indexOf(start), b=base.indexOf(end);
+  if(a>=0&&b>=a) base=(base.slice(0,a)+base.slice(b+end.length)).trim();
+  return base;
+}
+function moveoutInfo(l){
+  if(!l) return null;
+  const data=taggedInfo(l.note,MOVEOUT_TAG_START,MOVEOUT_TAG_END);
+  if(data) return {date:data['退租日']||'',reading:data['電錶']||'',note:data['備註']||''};
+  if(!l.active) return {date:'',reading:l.moveout_reading||'',note:''};
+  return null;
+}
+function saveMoveoutToLease(l,date,reading,note){
+  let base=stripTaggedBlock(l.note,MOVEOUT_TAG_START,MOVEOUT_TAG_END);
+  const block=`${MOVEOUT_TAG_START}退租日：${date||today()}${reading!==''&&reading!=null?'｜電錶：'+reading:''}${note?'｜備註：'+note:''}${MOVEOUT_TAG_END}`;
+  l.note=base ? `${base}
+${block}` : block;
+}
+function latestLeaseByTenant(tid){
+  return T('leases').filter(l=>l.tenant_id===tid)
+    .sort((a,b)=>String(b.updated_at||b.end_date||b.start_date||'').localeCompare(String(a.updated_at||a.end_date||a.start_date||'')))[0]||null;
+}
+function leasePayments(leaseId){
+  return T('rent_payments').filter(p=>p.lease_id===leaseId).sort((a,b)=>b.period.localeCompare(a.period));
+}
+function leaseDebtList(leaseId){
+  return leasePayments(leaseId).filter(p=>!p.paid);
+}
+function leaseDebtAmount(leaseId){
+  return leaseDebtList(leaseId).reduce((s,p)=>s+(p.amount||0),0);
+}
+function moveoutLeases(){
+  return T('leases').filter(l=>!l.active).sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||'')));
 }
 
 // 確保本月份所有出租房都有租金紀錄（僅限租約有效期間內）
@@ -682,7 +732,8 @@ window.roomDetail=function(id){
    ===================================================================== */
 function viewRent(){
   ensurePayments(S.month);
-  const pays=T('rent_payments').filter(p=>p.period===S.month)
+  const activeLeaseIds=new Set(T('leases').filter(l=>l.active).map(l=>l.id));
+  const pays=T('rent_payments').filter(p=>p.period===S.month&&activeLeaseIds.has(p.lease_id))
     .sort((a,b)=>roomLabel(byId('rooms',a.room_id)||{}).localeCompare(roomLabel(byId('rooms',b.room_id)||{}),'zh-Hant'));
   const total=pays.reduce((s,p)=>s+p.amount,0), got=pays.filter(p=>p.paid).reduce((s,p)=>s+p.amount,0);
   let html=`<div class="card"><div class="row">
@@ -1152,11 +1203,12 @@ window.openFixForm=function(id){
    ===================================================================== */
 function viewMore(){
   let html=`<div class="seg">
-    ${[['rooms','房間'],['tenants','房客租約'],['set','設定・匯出']].map(([k,n])=>
+    ${[['rooms','房間'],['tenants','房客租約'],['moveout','退租追蹤'],['set','設定・匯出']].map(([k,n])=>
       `<button class="${moreTab===k?'act':''}" onclick="setMoreTab('${k}')">${n}</button>`).join('')}
   </div>`;
   if(moreTab==='rooms') html+=moreRooms();
   if(moreTab==='tenants') html+=moreTenants();
+  if(moreTab==='moveout') html+=moreMoveouts();
   if(moreTab==='set') html+=moreSet();
   V.innerHTML=html;
 }
@@ -1237,13 +1289,67 @@ function moreTenants(){
   if(!T('tenants').length) h+=`<div class="empty">尚無房客資料</div>`;
   T('tenants').forEach(t=>{
     const al=T('leases').find(l=>l.active&&l.tenant_id===t.id);
-    h+=`<div class="li"><div class="main"><div class="t1">${esc(t.name)} ${disputeBadge(al,true)}</div>
-      <div class="t2">${esc(t.phone)}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div></div>
+    const ll=al||latestLeaseByTenant(t.id);
+    const mi=ll&&!ll.active?moveoutInfo(ll):null;
+    h+=`<div class="li"><div class="main"><div class="t1">${esc(t.name)} ${al?'':ll?'<span class="pill gr">退租</span>':''} ${disputeBadge(ll,true)}</div>
+      <div class="t2">${esc(t.phone)}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}${mi&&mi.date?'　退租日：'+esc(mi.date):''}</div></div>
       ${t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}
+      ${ll&&!ll.active?`<button class="btn sm sub" onclick="openMoveoutTrack('${ll.id}')">退租追蹤</button>`:''}
       <button class="btn sm sub" onclick="openTenantForm('${t.id}')">編輯</button></div>`;
   });
   return h+`</div>`;
 }
+function moreMoveouts(){
+  const ls=moveoutLeases();
+  let h=`<div class="card"><h2>退租後追蹤管理</h2>
+    <div class="muted">退租後的房客、原租約、欠繳租金、爭議／訴訟程序集中在這裡管理；原房間會回到空房，不再混在進行中租金管理。</div></div>`;
+  if(!ls.length) return h+`<div class="card empty">尚無退租紀錄</div>`;
+  h+=`<div class="card">`;
+  ls.forEach(l=>{
+    const r=byId('rooms',l.room_id), t=byId('tenants',l.tenant_id), mi=moveoutInfo(l)||{};
+    const debts=leaseDebtList(l.id), debtAmt=leaseDebtAmount(l.id);
+    h+=`<div class="li" style="flex-wrap:wrap"><div class="main">
+      <div class="t1">${t?esc(t.name):'未知房客'}　<span class="pill gr">原房間：${esc(r?roomLabel(r):'?')}</span> ${disputeBadge(l,true)}</div>
+      <div class="t2">租期：${l.start_date||'—'} ～ ${l.end_date||'—'}${mi.date?'　退租日：'+esc(mi.date):''}</div>
+      <div class="t2">${debts.length?`未結租金 ${debts.length} 期｜<span class="money">${fmt$(debtAmt)}</span>`:'租金無未結項目'}</div></div>
+      <button class="btn sm" onclick="openMoveoutTrack('${l.id}')">追蹤管理</button>
+      <button class="btn sm sub" onclick="openDisputeForm('${l.id}')">訴訟程序</button></div>`;
+  });
+  return h+`</div>`;
+}
+window.openMoveoutTrack=function(leaseId){
+  const l=byId('leases',leaseId); if(!l){toast('查無退租租約');return;}
+  const r=byId('rooms',l.room_id), t=byId('tenants',l.tenant_id), mi=moveoutInfo(l)||{};
+  const pays=leasePayments(l.id), debts=leaseDebtList(l.id), debtAmt=leaseDebtAmount(l.id);
+  const m=modal(`<h3>退租後追蹤：${t?esc(t.name):'未知房客'}</h3>
+    <div class="card"><h2>基本資料</h2>
+      <div class="li"><div class="main"><div class="t1">原房間</div><div class="t2">${esc(r?roomLabel(r):'?')}</div></div><span class="pill gr">退租後</span></div>
+      <div class="li"><div class="main"><div class="t1">房客</div><div class="t2">${t?esc(t.phone):''}　緊急：${t?esc(t.emergency_name):''} ${t?esc(t.emergency_phone):''}</div></div>${t&&t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}</div>
+      <div class="li"><div class="main"><div class="t1">租約／退租</div><div class="t2">${l.start_date||'—'} ～ ${l.end_date||'—'}${mi.date?'　退租日：'+esc(mi.date):''}${mi.reading?'　退租電錶：'+esc(mi.reading):''}</div></div></div>
+      ${disputeBadge(l)?`<div style="margin-top:8px">${disputeBadge(l)}</div>`:''}
+      ${mi.note?`<div class="muted" style="margin-top:8px">退租備註：${esc(mi.note)}</div>`:''}
+    </div>
+    <div class="card"><h2>租金／債權追蹤</h2>
+      <div class="alert ${debts.length?'red':''}">${debts.length?`尚有未結租金 ${debts.length} 期，合計 <b class="money">${fmt$(debtAmt)}</b>`:'目前沒有未結租金。'}</div>
+      ${pays.length?pays.map(p=>`<div class="li"><div class="main"><div class="t1">${p.period}</div><div class="t2"><span class="money">${fmt$(p.amount)}</span>${p.paid_date?'　'+p.paid_date+' 收':''}</div></div>
+        <span class="pill ${p.paid?'g':'r'}">${p.paid?'已繳':'未結'}</span>
+        ${p.paid?`<button class="btn sm sub" onclick="togglePaidInModal('${p.id}',false,this)">改未結</button><button class="btn sm sub" onclick="genRentReceipt('${p.id}')">憑證</button>`:`<button class="btn sm" onclick="togglePaidInModal('${p.id}',true,this)">登記收款</button>${t?contactBtns(t,p.period):''}`}</div>`).join(''):'<div class="empty">此租約尚無租金紀錄</div>'}
+    </div>
+    <div class="row">
+      <button class="btn grow" id="mtLaw">訴訟程序</button>
+      <button class="btn sub grow" id="mtEditT">編輯房客</button>
+    </div>`);
+  m.querySelector('#mtLaw').onclick=()=>{m.remove();openDisputeForm(leaseId);};
+  m.querySelector('#mtEditT').onclick=()=>{m.remove(); if(t) openTenantForm(t.id);};
+};
+window.togglePaidInModal=function(id,val,btn){
+  const p=byId('rent_payments',id); if(!p)return;
+  p.paid=val; p.paid_date=val?today():null; upsert('rent_payments',p);
+  const l=byId('leases',p.lease_id);
+  toast(val?'已登記收款 ✓':'已改為未結');
+  document.querySelectorAll('.modal-bg').forEach(x=>x.remove());
+  if(l&&!l.active) openMoveoutTrack(l.id); else render();
+};
 window.openTenantForm=function(id){
   const t=id?byId('tenants',id):{id:uid(),name:'',phone:'',emergency_name:'',emergency_phone:'',note:''};
   const m=modal(`<h3>${id?'編輯':'新增'}房客</h3>
@@ -1370,7 +1476,9 @@ window.moveOut=function(leaseId){
     <div class="muted">上次電錶讀數：${lr?lr.value+' 度（'+lr.reading_date+'）':'無'}</div>
     <label>退租日電錶讀數</label><input id="mv" type="number" inputmode="decimal" step="0.1">
     <label>退租日期</label><input id="md" type="date" value="${today()}">
+    <label>退租後追蹤備註</label><textarea id="mnote" rows="3" placeholder="例：押金爭議、欠租、設備損壞、準備調解或訴訟…"></textarea>
     <div class="card" id="mcalc" style="margin-top:12px"></div>
+    <div class="alert">確認後：房間會改為空房；此房客與未結租金會移到「更多 → 退租追蹤」。</div>
     <button class="btn warn" style="width:100%;margin-top:8px" id="mok">確認退租</button>`);
   const calc=()=>{
     const v=parseFloat(m.querySelector('#mv').value);
@@ -1386,9 +1494,13 @@ window.moveOut=function(leaseId){
     const v=parseFloat(m.querySelector('#mv').value);
     if(!isNaN(v)) upsert('meter_readings',{id:uid(),room_id:l.room_id,
       reading_date:m.querySelector('#md').value,value:v,kind:'退租',photo_url:'',note:'退租結算'});
-    l.active=false; l.moveout_reading=isNaN(v)?null:v; upsert('leases',l);
+    l.active=false;
+    saveMoveoutToLease(l,m.querySelector('#md').value,isNaN(v)?'':v,m.querySelector('#mnote').value.trim());
+    upsert('leases',l);
     r.status='空房'; upsert('rooms',r);
-    m.remove(); toast('退租完成，房間已改為空房 ✓'); render();
+    moreTab='moveout'; tab='more';
+    document.querySelectorAll('nav.tabbar button').forEach(x=>x.classList.toggle('act',x.dataset.tab==='more'));
+    m.remove(); toast('退租完成，房間已改為空房，資料已移到退租追蹤 ✓'); render(); scrollPageTop();
   };
 };
 
@@ -1415,7 +1527,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.2.5　標題旁顯示月份；非當月份以「非本月」警示標籤提醒，保留 iPhone 底部遮擋與切換頁面回頂修正。</div>
+    <div class="muted" style="margin-top:6px">v1.2.7　新增退租後追蹤管理；退租後房間自動回空房，該房客租金與爭議／訴訟程序集中管理。保留回到本月、月份警示與 iPhone 操作修正。</div>
   </div>`;
 }
 window.saveConn=async function(){
