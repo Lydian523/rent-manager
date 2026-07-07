@@ -125,6 +125,10 @@ main{max-width:960px;margin:0 auto;padding:14px 14px 20px}
 @media(min-width:640px){.twocol{grid-template-columns:1fr 1.5fr}}
 .li.todo{box-shadow:inset 4px 0 0 var(--amber)}
 .chip{cursor:pointer}
+.pill.chip{padding:6px 13px;font-size:13.5px;margin:3px 6px 3px 0;display:inline-block}
+.cbtn{width:40px;height:40px;border-radius:50%;border:none;color:#fff;font-size:18px;flex:none;
+  display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.cbtn.tel{background:var(--green)} .cbtn.sms{background:var(--blue)}
 
 /* ================= 對話框 ================= */
 .modal-bg{position:fixed;inset:0;background:rgba(20,25,22,.5);z-index:50;display:flex;
@@ -192,6 +196,44 @@ const RENT_DUE_DAY = 10;       // 每月 10 日為繳款期限
 const LEASE_ALERT_DAYS = 60;   // 租約到期提醒天數
 const LAMP_ALERT_DAYS = 30;    // 耗材更換提醒天數
 const SPIKE_RATIO = 1.25;      // 總錶帳單暴增門檻（+25%）
+const REMIND_COOLDOWN = 3;     // 催繳提示冷卻天數（避免短期重複催繳）
+
+/* ---------- 催繳聯絡 ---------- */
+function remindedRecently(t){ return !!(t&&t.last_reminded&&daysBetween(t.last_reminded,today())<=REMIND_COOLDOWN); }
+function remindHint(t){ return remindedRecently(t)?`<span class="pill b">已催繳 ${t.last_reminded.slice(5)}</span>`:''; }
+/* 撥打或傳簡訊；電話未登記時當場補登儲存後直接撥出，並記錄催繳日 */
+window.contactTenant=function(tid,method,period){
+  const t=byId('tenants',tid); if(!t){toast('查無房客資料');return;}
+  const go=()=>{
+    if(remindedRecently(t)&&t.last_reminded!==today()){
+      toast(`提示：${t.last_reminded} 已催繳過，仍繼續執行`);
+    }
+    t.last_reminded=today(); upsert('tenants',t);
+    document.querySelectorAll('.modal-bg').forEach(x=>x.remove());
+    if(method==='tel'){ location.href='tel:'+t.phone; }
+    else{
+      const msg=`您好，提醒您${period?' '+period.replace('-',' 年 ')+' 月':''}房租尚未繳納，再麻煩您了，謝謝。`;
+      const sep=/iPhone|iPad|iPod/.test(navigator.userAgent)?'&':'?';
+      location.href='sms:'+t.phone+sep+'body='+encodeURIComponent(msg);
+    }
+    setTimeout(render,500);
+  };
+  if(!t.phone){
+    const m=modal(`<h3>尚未登記電話：${esc(t.name)}</h3>
+      <label>電話</label><input id="qp" inputmode="tel" placeholder="09xx-xxx-xxx">
+      <button class="btn" style="width:100%;margin-top:14px" id="qs">儲存並${method==='tel'?'撥打':'傳簡訊'}</button>`);
+    m.querySelector('#qs').onclick=()=>{
+      const v=m.querySelector('#qp').value.trim();
+      if(!v){toast('請輸入電話');return;}
+      t.phone=v; upsert('tenants',t); m.remove(); go();
+    };
+  } else go();
+};
+function contactBtns(t,period){
+  if(!t) return '';
+  return `<button class="cbtn tel" title="撥打催繳" onclick="event.stopPropagation();contactTenant('${t.id}','tel','${period||''}')">☎\uFE0E</button>
+    <button class="cbtn sms" title="傳送簡訊" onclick="event.stopPropagation();contactTenant('${t.id}','sms','${period||''}')">✉\uFE0E</button>`;
+}
 
 /* ---------- 狀態 ---------- */
 let S = {
@@ -521,15 +563,16 @@ window.roomDetail=function(id){
       ${arr?`<div class="alert red" style="margin-top:8px">累計欠繳 ${arr} 期</div>`:''}
     </div>
     ${t?`<div class="card"><h2>房客</h2>
-      <div class="li"><div class="main"><div class="t1">${esc(t.name)}</div>
-      <div class="t2">${esc(t.phone)}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div></div>
+      <div class="li"><div class="main"><div class="t1">${esc(t.name)}　${remindHint(t)}</div>
+      <div class="t2">${esc(t.phone)||'未登記電話'}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div></div>
       ${t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}</div>
       ${l?`<div class="t2" style="padding:4px 2px">租約：${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}${l.prepaid_months?`　預繳 ${l.prepaid_months} 月`:''}</div>`:''}
     </div>`:''}
     ${pays.length?`<div class="card"><h2>近期繳費</h2>${pays.map(p=>`
       <div class="li"><div class="main"><div class="t1">${p.period}</div>
       <div class="t2">${fmt$(p.amount)}${p.paid_date?'　'+p.paid_date+' 收':''}</div></div>
-      <span class="pill ${p.paid?'g':isOverdue(p)?'r':'a'}">${p.paid?'已繳':isOverdue(p)?'逾期':'未繳'}</span></div>`).join('')}</div>`:''}
+      <span class="pill ${p.paid?'g':isOverdue(p)?'r':'a'}">${p.paid?'已繳':isOverdue(p)?'逾期':'未繳'}</span>
+      ${!p.paid&&t?contactBtns(t,p.period):''}</div>`).join('')}</div>`:''}
     ${reads.length?`<div class="card"><h2>近期電錶</h2>${reads.map(m=>`
       <div class="li"><div class="main"><div class="t1">${m.value} 度</div>
       <div class="t2">${m.reading_date}　${esc(m.kind)}</div></div>
@@ -570,7 +613,7 @@ function viewRent(){
       ${p.paid
         ? `<button class="btn sm sub" onclick="genRentReceipt('${p.id}')">憑證</button>
            <button class="btn sm sub" onclick="togglePaid('${p.id}',false)">改未繳</button>`
-        : `<span class="pill ${od?'r':'a'}">${od?'逾期':'未繳'}</span>
+        : `${remindHint(t)}<span class="pill ${od?'r':'a'}">${od?'逾期':'未繳'}</span>
            <button class="btn sm" onclick="togglePaid('${p.id}',true)">收款</button>`}
     </div>`;
   });
@@ -580,9 +623,9 @@ function viewRent(){
   if(debt.length){
     html+=`<div class="card"><h2>欠繳追蹤</h2>${debt.map(({l,n})=>{
       const r=byId('rooms',l.room_id),t=byId('tenants',l.tenant_id);
-      return `<div class="li"><div class="main"><div class="t1">${esc(r?roomLabel(r):'')} ${t?esc(t.name):''}</div>
-        <div class="t2">累計欠繳 ${n} 期${t&&t.phone?'　'+esc(t.phone):''}</div></div>
-        ${t&&t.phone?`<a class="btn sm warn" href="tel:${esc(t.phone)}">催繳</a>`:''}</div>`;}).join('')}</div>`;
+      return `<div class="li"><div class="main"><div class="t1">${esc(r?roomLabel(r):'')} ${t?esc(t.name):''}　${t?remindHint(t):''}</div>
+        <div class="t2">累計欠繳 ${n} 期${t&&t.phone?'　'+esc(t.phone):'　未登記電話'}</div></div>
+        ${t?contactBtns(t,''):''}</div>`;}).join('')}</div>`;
   }
   V.innerHTML=html;
   document.getElementById('mPick').onchange=e=>{S.month=e.target.value;persist();render();};
@@ -602,6 +645,9 @@ window.openPayDetail=function(id){
       <div class="li"><div class="main"><div class="t1">應繳金額</div></div><span class="money">${fmt$(p.amount)}</span></div>
       <div class="li"><div class="main"><div class="t1">狀態</div></div>
         <span class="pill ${p.paid?'g':isOverdue(p)?'r':'a'}">${p.paid?'已繳'+(p.paid_date?'（'+p.paid_date+'）':''):isOverdue(p)?'逾期未繳':'未繳'}</span></div>
+      ${!p.paid&&t?`<div class="li"><div class="main"><div class="t1">聯絡催繳　${remindHint(t)}</div>
+        <div class="t2">${t.phone?esc(t.phone):'未登記電話，點按鈕可當場補登'}</div></div>
+        ${contactBtns(t,p.period)}</div>`:''}
     </div>
     <div class="row">
       ${p.paid?`<button class="btn sub grow" id="pd1">改為未繳</button>
@@ -1247,7 +1293,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.1.1　參數如需調整請告知修改。</div>
+    <div class="muted" style="margin-top:6px">v1.2.0　參數如需調整請告知修改。</div>
   </div>`;
 }
 window.saveConn=async function(){
