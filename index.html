@@ -21,6 +21,8 @@
   --radius:14px; --shadow:0 1px 3px rgba(38,49,44,.08),0 4px 14px rgba(38,49,44,.06);
   --serif:"Georgia","Noto Serif TC","PMingLiU",serif;
   --sans:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --tabbar-height:86px;
+  --bottom-safe-space:calc(var(--tabbar-height) + env(safe-area-inset-bottom) + 44px);
 }
 [data-theme="dark"]{
   --bg:#151917; --card:#1F2622; --card2:#262E29;
@@ -35,7 +37,8 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
 body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:16px;
-  padding-bottom:calc(140px + env(safe-area-inset-bottom));}
+  padding-bottom:var(--bottom-safe-space);
+  scroll-padding-bottom:var(--bottom-safe-space);}
 button{font-family:inherit;cursor:pointer}
 input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink);
   background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
@@ -55,7 +58,8 @@ header h1{font-size:18px;font-weight:700;letter-spacing:.05em;flex:1}
 /* ================= 底部導航 ================= */
 nav.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;
   background:var(--card);border-top:1px solid var(--line);
-  padding-bottom:env(safe-area-inset-bottom)}
+  padding-bottom:max(env(safe-area-inset-bottom), 10px);
+  min-height:var(--tabbar-height)}
 nav.tabbar button{flex:1;background:none;border:none;padding:9px 0 7px;color:var(--ink2);
   font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
 nav.tabbar button .ico{font-size:21px;line-height:1}
@@ -64,7 +68,8 @@ nav.tabbar button.act{background:var(--green);color:#fff;font-weight:700;
 nav.tabbar button.act .ico{transform:scale(1.05)}
 
 /* ================= 通用元件 ================= */
-main{max-width:960px;margin:0 auto;padding:14px 14px 20px}
+main{max-width:960px;margin:0 auto;padding:14px 14px var(--bottom-safe-space)}
+main::after{content:"";display:block;height:calc(var(--tabbar-height) + env(safe-area-inset-bottom) + 16px)}
 .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
   padding:14px 16px;margin-bottom:12px}
 .card h2{font-size:15px;color:var(--ink2);font-weight:700;margin-bottom:10px;letter-spacing:.06em}
@@ -174,7 +179,7 @@ canvas.chart{width:100%!important}
 
 <script>
 /* =====================================================================
-   出租房屋管理系統 v1.0
+   出租房屋管理系統 v1.2.3
    架構：本機優先（localStorage）＋ Supabase 雲端同步（離線佇列）
    ===================================================================== */
 "use strict";
@@ -1311,7 +1316,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.2.2　參數如需調整請告知修改。</div>
+    <div class="muted" style="margin-top:6px">v1.2.3　iPhone 底部導航遮擋修正；參數如需調整請告知修改。</div>
   </div>`;
 }
 window.saveConn=async function(){
