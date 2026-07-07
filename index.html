@@ -59,7 +59,9 @@ nav.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;
 nav.tabbar button{flex:1;background:none;border:none;padding:9px 0 7px;color:var(--ink2);
   font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
 nav.tabbar button .ico{font-size:21px;line-height:1}
-nav.tabbar button.act{color:var(--green);font-weight:700}
+nav.tabbar button.act{background:var(--green);color:#fff;font-weight:700;
+  border-radius:14px;margin:5px 7px;padding:5px 0 4px}
+nav.tabbar button.act .ico{transform:scale(1.05)}
 
 /* ================= 通用元件 ================= */
 main{max-width:960px;margin:0 auto;padding:14px 14px 20px}
@@ -94,14 +96,17 @@ main{max-width:960px;margin:0 auto;padding:14px 14px 20px}
 .bldg-title{font-size:14px;font-weight:700;color:var(--ink2);margin:16px 2px 8px;
   letter-spacing:.08em;display:flex;align-items:center;gap:8px}
 .bldg-title::after{content:"";flex:1;height:1px;background:var(--line)}
-.keywall{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px}
-.keycard{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:10px 10px 9px 12px;
-  position:relative;overflow:hidden;border:none;text-align:left;min-height:78px;
-  display:flex;flex-direction:column;gap:3px}
-.keycard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--kc,#999)}
-.keycard .rn{font-weight:700;font-size:15px;color:var(--ink)}
-.keycard .tt{font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.keycard .st{font-size:12px;font-weight:600;color:var(--kc)}
+.keywall{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:9px}
+.keycard{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:11px 10px 9px;
+  border:none;text-align:left;min-height:84px;display:flex;flex-direction:column;gap:6px}
+.kc-row{display:flex;gap:9px;align-items:center;min-width:0}
+.kc-av{width:40px;height:40px;border-radius:50%;background:var(--kc,#999);color:#fff;flex:none;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px}
+.kc-info{min-width:0}
+.kc-nm{display:block;font-weight:700;font-size:15px;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kc-rn{display:block;font-size:12px;color:var(--ink2)}
+.keycard .st{font-size:12.5px;font-weight:600;color:var(--kc)}
 .keycard:active{transform:scale(.97)}
 
 /* ================= 清單列 ================= */
@@ -116,6 +121,10 @@ main{max-width:960px;margin:0 auto;padding:14px 14px 20px}
 .seg button{flex:1;border:none;background:none;padding:8px 10px;border-radius:9px;font-size:14px;
   color:var(--ink2);font-weight:600;white-space:nowrap}
 .seg button.act{background:var(--card);color:var(--green);box-shadow:var(--shadow)}
+.twocol{display:grid;grid-template-columns:1fr;gap:12px;align-items:start}
+@media(min-width:640px){.twocol{grid-template-columns:1fr 1.5fr}}
+.li.todo{box-shadow:inset 4px 0 0 var(--amber)}
+.chip{cursor:pointer}
 
 /* ================= 對話框 ================= */
 .modal-bg{position:fixed;inset:0;background:rgba(20,25,22,.5);z-index:50;display:flex;
@@ -278,15 +287,22 @@ function activeLease(roomId){ return T('leases').find(l=>l.room_id===roomId&&l.a
 function tenantOf(roomId){ const l=activeLease(roomId); return l?byId('tenants',l.tenant_id):null; }
 function monthlyTotal(r){ return (r.monthly_rent||0)+(r.water_fee||0)+(r.gas_fee||0); }
 
-// 確保本月份所有出租房都有租金紀錄
+// 確保本月份所有出租房都有租金紀錄（僅限租約有效期間內）
 function ensurePayments(period){
   T('rooms').filter(r=>r.status==='出租中').forEach(r=>{
-    const l=activeLease(r.id); if(!l) return;
+    const l=activeLease(r.id); if(!l||!periodOK(l,period)) return;
     if(!T('rent_payments').some(p=>p.lease_id===l.id&&p.period===period)){
       upsert('rent_payments',{id:uid(),lease_id:l.id,room_id:r.id,period,
         amount:monthlyTotal(r),paid:false,paid_date:null,note:''});
     }
   });
+  // 清理：起租月之前被誤產生且「未繳」的紀錄（已繳的一律保留不動）
+  T('rent_payments').filter(p=>{
+    if(p.paid) return false;
+    const l=byId('leases',p.lease_id); if(!l) return false;
+    const s=(l.start_date||'').slice(0,7);
+    return s && p.period<s;
+  }).forEach(p=>del('rent_payments',p.id));
 }
 function isOverdue(p){
   if(p.paid) return false;
@@ -403,10 +419,32 @@ document.getElementById('darkBtn').onclick=()=>{
 /* =====================================================================
    視圖：總覽（鑰匙牆）
    ===================================================================== */
-const STATUS_COLOR={'出租中':'var(--green)','空房':'var(--blue)','整修中':'var(--amber)','自用':'var(--violet)'};
+const STATUS_COLOR={'出租中':'var(--green)','空房':'var(--blue)','整修中':'var(--amber)','自用':'var(--violet)','停用':'var(--ink2)'};
+
+/* 該期是否落在租約有效範圍（起租月之後、且不超過本月） */
+function periodOK(l,period){
+  const s=(l.start_date||'').slice(0,7);
+  if(s && period<s) return false;
+  if(!l.active && l.end_date && period>l.end_date.slice(0,7)) return false;
+  if(period > new Date().toISOString().slice(0,7)) return false; // 未來月份不預先產生
+  return true;
+}
+/* 剩餘租期文字 */
+function remainText(endDate){
+  if(!endDate) return '';
+  const d=daysBetween(today(),endDate);
+  if(d<0) return `已到期 ${-d} 天`;
+  const y=Math.floor(d/365), r=d%365;
+  return y? `剩 ${y} 年 ${r} 天` : `剩 ${d} 天`;
+}
+function addYears(dateStr,n,minusOneDay){
+  const dt=new Date(dateStr); dt.setFullYear(dt.getFullYear()+n);
+  if(minusOneDay) dt.setDate(dt.getDate()-1);
+  return dt.toISOString().slice(0,10);
+}
 function viewHome(){
   ensurePayments(S.month);
-  const rooms=T('rooms');
+  const rooms=T('rooms').filter(r=>r.room_type!=='總錶');
   const rented=rooms.filter(r=>r.status==='出租中');
   const pays=T('rent_payments').filter(p=>p.period===S.month);
   const paid=pays.filter(p=>p.paid).length;
@@ -454,9 +492,12 @@ function viewHome(){
       else if(p&&p.paid){ st='已繳 ✓'; col='var(--green)'; }
       else if(p&&isOverdue(p)){ st='逾期未繳'; col='var(--red)'; }
       else { st='未繳'; col='var(--amber)'; }
+      const nm=t?t.name:(r.status==='出租中'?'未登記房客':r.status);
+      const av=t?t.name.charAt(0):({'空房':'空','整修中':'修','自用':'自','停用':'停'}[r.status]||r.room_type.charAt(0));
       html+=`<button class="keycard" style="--kc:${col}" onclick="roomDetail('${r.id}')">
-        <span class="rn">${esc(r.room_no)}</span>
-        <span class="tt">${t?esc(t.name):esc(r.room_type)}</span>
+        <span class="kc-row"><span class="kc-av">${esc(av)}</span>
+        <span class="kc-info"><span class="kc-nm">${esc(nm)}</span>
+        <span class="kc-rn">${esc(r.room_no)}</span></span></span>
         <span class="st">${st}</span></button>`;
     });
     html+=`</div>`;
@@ -510,14 +551,22 @@ function viewRent(){
       <div style="text-align:right"><div class="money" style="font-size:19px">${fmt$(got)} <span class="muted">/ ${fmt$(total)}</span></div>
       <div class="muted">本期已收 / 應收</div></div></div>
     <div class="bar-wrap" style="margin-top:8px"><div class="bar" style="width:${total?Math.round(got/total*100):0}%"></div></div>
-  </div><div class="card">`;
-  if(!pays.length) html+=`<div class="empty">本月無出租中房間的租金紀錄</div>`;
+  </div>`;
+  const curM=new Date().toISOString().slice(0,7);
+  if(S.month>curM) html+=`<div class="alert">「${S.month}」尚未到期，系統不預先產生應收紀錄；到當月會自動建立。</div>`;
+  html+=`<div class="card">`;
+  if(!pays.length) html+=`<div class="empty">${S.month>curM?'未來月份無紀錄':'本月無出租中房間的租金紀錄（請確認各房租約起租日）'}</div>`;
   pays.forEach(p=>{
     const r=byId('rooms',p.room_id), l=byId('leases',p.lease_id), t=l?byId('tenants',l.tenant_id):null;
-    const od=isOverdue(p), arr=l?arrears(l.id):0;
-    html+=`<div class="li">
+    const od=isOverdue(p);
+    // 該房客所有欠繳期別（不含本列期間），直接排在卡列中可點擊
+    const owed=l?T('rent_payments').filter(x=>x.lease_id===l.id&&!x.paid&&isOverdue(x)&&x.period!==p.period)
+      .sort((a,b)=>a.period.localeCompare(b.period)):[];
+    html+=`<div class="li" style="flex-wrap:wrap">
       <div class="main"><div class="t1">${esc(r?roomLabel(r):'?')} <span class="muted">${t?esc(t.name):''}</span></div>
-      <div class="t2"><span class="money">${fmt$(p.amount)}</span>${p.paid&&p.paid_date?'　'+p.paid_date+' 收訖':''}${arr>1?`　<span style="color:var(--red)">欠 ${arr} 期</span>`:''}</div></div>
+      <div class="t2"><span class="money">${fmt$(p.amount)}</span>${p.paid&&p.paid_date?'　'+p.paid_date+' 收訖':''}</div>
+      ${owed.length?`<div class="t2" style="margin-top:5px">欠 ${owed.length} 期：${owed.map(o=>
+        `<span class="pill r chip" style="margin-right:4px" onclick="openPayDetail('${o.id}')">${o.period}</span>`).join('')}</div>`:''}</div>
       ${p.paid
         ? `<button class="btn sm sub" onclick="genRentReceipt('${p.id}')">憑證</button>
            <button class="btn sm sub" onclick="togglePaid('${p.id}',false)">改未繳</button>`
@@ -542,6 +591,28 @@ window.togglePaid=function(id,val){
   const p=byId('rent_payments',id); if(!p)return;
   p.paid=val; p.paid_date=val?today():null; upsert('rent_payments',p);
   toast(val?'已登記收款 ✓':'已改為未繳'); render();
+};
+/* 單期租金管理視窗（從欠繳期別點入） */
+window.openPayDetail=function(id){
+  const p=byId('rent_payments',id); if(!p)return;
+  const r=byId('rooms',p.room_id), l=byId('leases',p.lease_id), t=l?byId('tenants',l.tenant_id):null;
+  const m=modal(`<h3>${esc(r?roomLabel(r):'')}　${p.period}</h3>
+    <div class="card">
+      <div class="li"><div class="main"><div class="t1">房客</div></div><span>${t?esc(t.name):'—'}</span></div>
+      <div class="li"><div class="main"><div class="t1">應繳金額</div></div><span class="money">${fmt$(p.amount)}</span></div>
+      <div class="li"><div class="main"><div class="t1">狀態</div></div>
+        <span class="pill ${p.paid?'g':isOverdue(p)?'r':'a'}">${p.paid?'已繳'+(p.paid_date?'（'+p.paid_date+'）':''):isOverdue(p)?'逾期未繳':'未繳'}</span></div>
+    </div>
+    <div class="row">
+      ${p.paid?`<button class="btn sub grow" id="pd1">改為未繳</button>
+                <button class="btn grow" id="pd2">產生憑證</button>`
+              :`<button class="btn grow" id="pd1">登記收款</button>`}
+    </div>`);
+  m.querySelector('#pd1').onclick=()=>{
+    p.paid=!p.paid; p.paid_date=p.paid?today():null; upsert('rent_payments',p);
+    m.remove(); toast(p.paid?'已登記收款 ✓':'已改為未繳'); render();
+  };
+  const b2=m.querySelector('#pd2'); if(b2) b2.onclick=()=>{m.remove();genRentReceipt(p.id);};
 };
 
 /* ---------- 對帳憑證圖片（Canvas） ---------- */
@@ -570,8 +641,26 @@ function drawReceipt(lines,title,fname){
   c.fillStyle='#5F6B64'; c.font='14px sans-serif';
   c.fillText('產生日期：'+today(),54,y+50);
   c.fillText('出租房屋管理系統',54,y+74);
-  const a=document.createElement('a'); a.download=fname; a.href=cv.toDataURL('image/png'); a.click();
-  toast('憑證圖片已下載');
+  // 產生後開啟預覽視窗：可下載、可分享（iOS 可長按圖片存入照片）
+  const dataUrl=cv.toDataURL('image/png');
+  const m=modal(`<h3>${esc(title)}</h3>
+    <img src="${dataUrl}" style="width:100%;border-radius:12px;box-shadow:var(--shadow)" alt="憑證">
+    <div class="muted" style="margin:8px 0">手機可長按圖片直接儲存到照片；「下載」會存到瀏覽器的下載資料夾。</div>
+    <div class="row">
+      <button class="btn grow" id="rcDl">下載圖片</button>
+      <button class="btn sub grow" id="rcSh">分享…</button>
+    </div>`);
+  m.querySelector('#rcDl').onclick=()=>{
+    const a=document.createElement('a'); a.download=fname; a.href=dataUrl; a.click();
+    toast('已下載到瀏覽器下載資料夾');
+  };
+  m.querySelector('#rcSh').onclick=()=>cv.toBlob(async blob=>{
+    try{
+      const file=new File([blob],fname,{type:'image/png'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file]});
+      else toast('此瀏覽器不支援分享，請改用下載或長按圖片');
+    }catch(e){}
+  },'image/png');
 }
 window.genRentReceipt=function(pid){
   const p=byId('rent_payments',pid); const r=byId('rooms',p.room_id);
@@ -618,48 +707,76 @@ function viewPower(){
 }
 window.setPowerTab=k=>{powerTab=k;render();};
 
-function powerRead(){
-  const rooms=T('rooms').filter(r=>r.room_type!=='倉庫').sort((a,b)=>roomLabel(a).localeCompare(roomLabel(b),'zh-Hant'));
-  let h=`<div class="card"><div class="muted" style="margin-bottom:6px">
-    每半年「結算抄錶」一次；期中可做「快抄」監測異常，不列入結算。輸入值小於上次讀數會提醒。</div></div><div class="card">`;
-  rooms.forEach(r=>{
-    const lr=lastReading(r.id);
-    h+=`<div class="li"><div class="main"><div class="t1">${esc(roomLabel(r))}</div>
-      <div class="t2">上次：${lr?lr.value+' 度（'+lr.reading_date+'・'+esc(lr.kind)+'）':'尚無紀錄'}</div></div>
-      <button class="btn sm" onclick="openReading('${r.id}')">抄錶</button></div>`;
+/* 每個物件自動建立一個「電總錶」抄錶對象 */
+function ensureMasterMeters(){
+  T('buildings').forEach(b=>{
+    if(!T('rooms').some(r=>r.building_id===b.id&&r.room_type==='總錶')){
+      upsert('rooms',{id:uid(),building_id:b.id,room_no:'電總錶',floor:'',room_type:'總錶',
+        monthly_rent:0,water_fee:0,gas_fee:0,status:'自用',note:'系統自動建立：總錶抄錶用'});
+    }
   });
-  return h+`</div>`;
 }
-window.openReading=function(roomId){
-  const r=byId('rooms',roomId); const lr=lastReading(roomId);
-  const m=modal(`<h3>抄錶：${esc(roomLabel(r))}</h3>
+function readRow(r){
+  const lr=lastReading(r.id);
+  const recent=lr&&daysBetween(lr.reading_date,today())<=7;
+  return `<div class="li ${recent?'':'todo'}"><div class="main">
+    <div class="t1">${esc(r.room_type==='總錶'?byId('buildings',r.building_id)?.name+' 總錶':roomLabel(r))}</div>
+    <div class="t2">${lr?'上次：'+lr.value+' 度（'+lr.reading_date+'・'+esc(lr.kind)+'）':'尚無紀錄'}${lr&&lr.note?'　'+esc(lr.note):''}</div></div>
+    ${recent
+      ?`<button class="btn sm sub" style="color:var(--green)" onclick="openReading('${r.id}','${lr.id}')">✓ 編輯</button>`
+      :`<button class="btn sm" onclick="openReading('${r.id}')">抄錶</button>`}</div>`;
+}
+function powerRead(){
+  ensureMasterMeters();
+  const masters=T('rooms').filter(r=>r.room_type==='總錶');
+  const rooms=T('rooms').filter(r=>!['倉庫','總錶'].includes(r.room_type)&&r.status!=='停用')
+    .sort((a,b)=>roomLabel(a).localeCompare(roomLabel(b),'zh-Hant'));
+  return `<div class="card"><div class="muted">
+    7 天內已抄過的會顯示「✓ 編輯」，左側黃線＝這一輪還沒抄。總錶減去各房加總＝公共用電，也可用來核對漏電。</div></div>
+  <div class="twocol">
+    <div class="card"><h2>總錶（各物件）</h2>${masters.map(readRow).join('')||'<div class="empty">無</div>'}</div>
+    <div class="card"><h2>各房私錶</h2>${rooms.map(readRow).join('')||'<div class="empty">無</div>'}</div>
+  </div>`;
+}
+window.openReading=function(roomId,editId){
+  const r=byId('rooms',roomId);
+  const ex=editId?byId('meter_readings',editId):null;
+  // 比對基準：排除正在編輯的那筆後的最新讀數
+  const prevList=T('meter_readings').filter(m=>m.room_id===roomId&&(!ex||m.id!==ex.id))
+    .sort((a,b)=>a.reading_date.localeCompare(b.reading_date));
+  const lr=prevList[prevList.length-1]||null;
+  const name=r.room_type==='總錶'?(byId('buildings',r.building_id)?.name+' 總錶'):roomLabel(r);
+  const m=modal(`<h3>${ex?'編輯讀數':'抄錶'}：${esc(name)}</h3>
     <div class="muted">上次讀數：${lr?lr.value+' 度（'+lr.reading_date+'）':'無'}</div>
-    <label>本次讀數（度）</label><input type="number" inputmode="decimal" id="rv" step="0.1">
-    <label>日期</label><input type="date" id="rd" value="${today()}">
-    <label>類型</label><select id="rk"><option>結算</option><option>快抄</option><option>退租</option></select>
-    <label>錶面照片（存證）</label><input type="file" id="rp" accept="image/*" capture="environment">
-    <div class="row" style="margin-top:16px"><button class="btn grow" id="rs">儲存讀數</button></div>`);
+    <label>本次讀數（度）</label><input type="number" inputmode="decimal" id="rv" step="0.1" value="${ex?ex.value:''}">
+    <label>日期</label><input type="date" id="rd" value="${ex?ex.reading_date:today()}">
+    <label>類型</label><select id="rk">${['結算','快抄','退租'].map(k=>`<option ${ex&&ex.kind===k?'selected':''}>${k}</option>`).join('')}</select>
+    <label>備註</label><input id="rnote" value="${ex?esc(ex.note||''):''}" placeholder="例：錶面模糊、換新錶歸零、房客反映異常…">
+    <label>錶面照片（存證）${ex&&ex.photo_url?'　<a href="'+esc(ex.photo_url)+'" target="_blank">查看現有照片</a>':''}</label>
+    <input type="file" id="rp" accept="image/*" capture="environment">
+    <div class="row" style="margin-top:16px"><button class="btn grow" id="rs">${ex?'更新讀數':'儲存讀數'}</button></div>`);
   m.querySelector('#rs').onclick=async()=>{
     const v=parseFloat(m.querySelector('#rv').value);
     if(isNaN(v)){toast('請輸入讀數');return;}
     const doSave=async()=>{
-      let url='';
+      let url=ex?ex.photo_url:'';
       const f=m.querySelector('#rp').files[0];
       if(f){ url=await uploadPhoto(roomId,f); }
-      upsert('meter_readings',{id:uid(),room_id:roomId,reading_date:m.querySelector('#rd').value,
-        value:v,kind:m.querySelector('#rk').value,photo_url:url,note:''});
-      // 快抄異常比對
-      if(lr){
-        const days=Math.max(1,daysBetween(lr.reading_date,m.querySelector('#rd').value));
+      const row=ex||{id:uid(),room_id:roomId};
+      Object.assign(row,{reading_date:m.querySelector('#rd').value,value:v,
+        kind:m.querySelector('#rk').value,photo_url:url,note:m.querySelector('#rnote').value});
+      upsert('meter_readings',row);
+      // 快抄異常比對（僅新抄且有歷史時）
+      if(!ex&&lr){
+        const days=Math.max(1,daysBetween(lr.reading_date,row.reading_date));
         const daily=(v-lr.value)/days;
-        const hist=T('meter_readings').filter(x=>x.room_id===roomId).sort((a,b)=>a.reading_date.localeCompare(b.reading_date));
-        if(hist.length>=3){
-          const h0=hist[0], hd=Math.max(1,daysBetween(h0.reading_date,lr.reading_date));
+        if(prevList.length>=3){
+          const h0=prevList[0], hd=Math.max(1,daysBetween(h0.reading_date,lr.reading_date));
           const base=(lr.value-h0.value)/hd;
-          if(base>0&&daily>base*1.6) toast(`⚠ ${r.room_no} 日均用電 ${daily.toFixed(1)} 度，高於歷史 ${base.toFixed(1)} 度，請留意設備異常`);
+          if(base>0&&daily>base*1.6) toast(`⚠ ${name} 日均用電 ${daily.toFixed(1)} 度，高於歷史 ${base.toFixed(1)} 度，請留意設備異常`);
         }
       }
-      m.remove(); toast('讀數已儲存 ✓'); render();
+      m.remove(); toast(ex?'讀數已更新 ✓':'讀數已儲存 ✓'); render();
     };
     if(lr&&v<lr.value){
       confirmBox(`輸入值 ${v} 小於上次讀數 ${lr.value}，可能輸入錯誤或錶已歸零更換。確定儲存？`,doSave);
@@ -720,7 +837,7 @@ window.makeBills=function(){
   if(!lb){toast('請先輸入結算期間名稱');return;}
   if(T('electricity_bills').some(b=>b.period_label===lb)){toast('此期間名稱已存在');return;}
   let n=0;
-  T('rooms').filter(r=>r.room_type!=='倉庫').forEach(r=>{
+  T('rooms').filter(r=>!['倉庫','總錶'].includes(r.room_type)&&r.status!=='停用').forEach(r=>{
     const rs=T('meter_readings').filter(m=>m.room_id===r.id&&['結算','退租'].includes(m.kind))
       .sort((a,b)=>a.reading_date.localeCompare(b.reading_date));
     if(rs.length<2) return;
@@ -780,8 +897,8 @@ window.delUtil=id=>confirmBox('刪除這筆帳單？',()=>{del('utility_bills',i
 function initTrend(){
   Object.values(charts).forEach(c=>c.destroy()); charts={};
   const selR=document.getElementById('trRoom');
-  const rooms=T('rooms').filter(r=>r.room_type!=='倉庫');
-  selR.innerHTML=rooms.map(r=>`<option value="${r.id}">${esc(roomLabel(r))}</option>`).join('');
+  const rooms=T('rooms').filter(r=>r.room_type!=='倉庫'&&r.status!=='停用');
+  selR.innerHTML=rooms.map(r=>`<option value="${r.id}">${esc(r.room_type==='總錶'?(byId('buildings',r.building_id)?.name+' 總錶'):roomLabel(r))}</option>`).join('');
   const drawR=()=>{
     const bills=T('electricity_bills').filter(b=>b.room_id===selR.value)
       .sort((a,b)=>a.updated_at.localeCompare(b.updated_at));
@@ -920,14 +1037,16 @@ window.openRoomForm=function(id){
   const m=modal(`<h3>${id?'編輯':'新增'}房間</h3>
     <label>物件</label><select id="rb">${T('buildings').map(b=>`<option value="${b.id}" ${b.id===r.building_id?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
     <label>房號</label><input id="rn" value="${esc(r.room_no)}">
-    <label>房型</label><select id="rt">${['店面','雅房','套房','倉庫'].map(t=>`<option ${t===r.room_type?'selected':''}>${t}</option>`).join('')}</select>
+    <label>房型</label><select id="rt">${['店面','雅房','套房','倉庫',...(r.room_type==='總錶'?['總錶']:[])].map(t=>`<option ${t===r.room_type?'selected':''}>${t}</option>`).join('')}</select>
     <div class="row"><div class="grow"><label>月租</label><input id="rr" type="number" value="${r.monthly_rent}"></div>
     <div class="grow"><label>水費</label><input id="rw" type="number" value="${r.water_fee}"></div>
     <div class="grow"><label>瓦斯</label><input id="rg" type="number" value="${r.gas_fee}"></div></div>
-    <label>狀態</label><select id="rst">${['出租中','空房','整修中','自用'].map(t=>`<option ${t===r.status?'selected':''}>${t}</option>`).join('')}</select>
+    <label>狀態</label><select id="rst">${['出租中','空房','整修中','自用','停用'].map(t=>`<option ${t===r.status?'selected':''}>${t}</option>`).join('')}</select>
     <label>備註</label><input id="rnote" value="${esc(r.note)}">
     <div class="row" style="margin-top:16px"><button class="btn grow" id="rs2">儲存</button>
-    ${id?`<button class="btn warn" id="rx">刪除</button>`:''}</div>`);
+    ${id?(r.status==='停用'
+      ?`<button class="btn sub" id="rx">重新啟用</button>`
+      :`<button class="btn warn" id="rx">停用</button>`):''}</div>`);
   m.querySelector('#rs2').onclick=()=>{
     Object.assign(r,{building_id:m.querySelector('#rb').value,room_no:m.querySelector('#rn').value,
       room_type:m.querySelector('#rt').value,monthly_rent:+m.querySelector('#rr').value,
@@ -936,8 +1055,16 @@ window.openRoomForm=function(id){
     if(!r.room_no){toast('請輸入房號');return;}
     upsert('rooms',r); m.remove(); toast('已儲存 ✓'); render();
   };
-  if(id) m.querySelector('#rx').onclick=()=>confirmBox('刪除此房間？（相關紀錄將保留但失去連結）',()=>{
-    del('rooms',id); m.remove(); render();});
+  if(id) m.querySelector('#rx').onclick=()=>{
+    if(r.status==='停用'){
+      r.status='空房'; upsert('rooms',r); m.remove(); toast('已重新啟用（狀態：空房）'); render();
+    } else {
+      confirmBox('停用此房間？房間與歷史紀錄全部保留，僅不再出現在租金、抄錶與租約選單中。',()=>{
+        if(activeLease(r.id)){toast('此房間尚有進行中租約，請先辦理退租');return;}
+        r.status='停用'; upsert('rooms',r); m.remove(); toast('已停用（可隨時重新啟用）'); render();
+      });
+    }
+  };
 };
 
 function moreTenants(){
@@ -951,10 +1078,11 @@ function moreTenants(){
   ls.forEach(l=>{
     const r=byId('rooms',l.room_id), t=byId('tenants',l.tenant_id);
     const d=l.end_date?daysBetween(today(),l.end_date):null;
+    const rt=remainText(l.end_date);
     h+=`<div class="li"><div class="main">
-      <div class="t1">${esc(r?roomLabel(r):'?')}　${t?esc(t.name):''}</div>
-      <div class="t2">${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}
-        ${d!==null&&d<=LEASE_ALERT_DAYS?`<span class="pill ${d<0?'r':'a'}">${d<0?'已到期':'剩 '+d+' 天'}</span>`:''}</div></div>
+      <div class="t1">${esc(r?roomLabel(r):'?')}　${t?esc(t.name):''}
+        ${rt?`<span class="pill ${d<0?'r':d<=LEASE_ALERT_DAYS?'a':'g'}" style="margin-left:4px">${rt}</span>`:'<span class="pill gr">未設到期日</span>'}</div>
+      <div class="t2">${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}</div></div>
       <button class="btn sm sub" onclick="openLeaseForm('${l.id}')">編輯</button>
       <button class="btn sm warn" onclick="moveOut('${l.id}')">退租</button></div>`;
   });
@@ -1022,7 +1150,7 @@ window.openLeaseForm=function(id){
   const l=id?byId('leases',id):{id:uid(),room_id:'',tenant_id:'',start_date:today(),end_date:'',
     deposit:0,prepaid_months:0,active:true,note:''};
   // 可選房間：尚無進行中租約者（含補登既有房客的出租中房間）；編輯時保留原房間
-  const vac=T('rooms').filter(r=>r.room_type!=='倉庫'&&(!activeLease(r.id)||r.id===l.room_id));
+  const vac=T('rooms').filter(r=>!['倉庫','總錶'].includes(r.room_type)&&r.status!=='停用'&&(!activeLease(r.id)||r.id===l.room_id));
   if(!vac.length){ toast('所有房間都已有進行中租約'); return; }
   const m=modal(`<h3>${id?'編輯租約':'新租約'}</h3>
     <label>房間</label><select id="lr">${vac.map(r=>`<option value="${r.id}" ${r.id===l.room_id?'selected':''}>${esc(roomLabel(r))}（${esc(r.status)}）</option>`).join('')}</select>
@@ -1032,10 +1160,30 @@ window.openLeaseForm=function(id){
       <button class="btn sm sub" id="lnew">新房客</button></div>
     <div class="row"><div class="grow"><label>起租日</label><input id="ls" type="date" value="${l.start_date||''}"></div>
     <div class="grow"><label>到期日</label><input id="le" type="date" value="${l.end_date||''}"></div></div>
+    <label>快速設定（以年簽約）</label>
+    <div class="row">
+      <button class="btn sm sub" data-yr="1">簽 1 年</button>
+      <button class="btn sm sub" data-yr="2">簽 2 年</button>
+      <button class="btn sm sub" data-yr="3">簽 3 年</button>
+      <span style="width:8px"></span>
+      <button class="btn sm sub" data-adj="1">到期 +1 年</button>
+      <button class="btn sm sub" data-adj="-1">到期 −1 年</button>
+    </div>
     <div class="row"><div class="grow"><label>押金（元）</label><input id="ld" type="number" value="${l.deposit}"></div>
     <div class="grow"><label>預繳月數</label><input id="lp" type="number" value="${l.prepaid_months}"></div></div>
     <button class="btn" style="width:100%;margin-top:16px" id="lsv">儲存租約</button>`);
   m.querySelector('#lnew').onclick=()=>{m.remove();openTenantForm();};
+  // 快速年份：簽 N 年＝起租日＋N年−1天；+1/−1年＝就現有到期日調整
+  m.querySelectorAll('[data-yr]').forEach(b=>b.onclick=()=>{
+    const sd=m.querySelector('#ls').value;
+    if(!sd){toast('請先填起租日');return;}
+    m.querySelector('#le').value=addYears(sd,+b.dataset.yr,true);
+  });
+  m.querySelectorAll('[data-adj]').forEach(b=>b.onclick=()=>{
+    const ed=m.querySelector('#le').value||m.querySelector('#ls').value;
+    if(!ed){toast('請先填起租日或到期日');return;}
+    m.querySelector('#le').value=addYears(ed,+b.dataset.adj,false);
+  });
   m.querySelector('#lsv').onclick=()=>{
     const rid=m.querySelector('#lr').value, tid=m.querySelector('#lt').value;
     if(!rid||!tid){toast('請選擇房間與房客');return;}
@@ -1099,7 +1247,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.0.4　參數如需調整請告知修改。</div>
+    <div class="muted" style="margin-top:6px">v1.1.1　參數如需調整請告知修改。</div>
   </div>`;
 }
 window.saveConn=async function(){
