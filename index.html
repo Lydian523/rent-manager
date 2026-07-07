@@ -165,6 +165,17 @@ canvas.chart{width:100%!important}
    ===================================================================== */
 "use strict";
 
+/* ============================================================
+   ★ 預設雲端連線（換版本免重填）
+   將 Supabase 連線資料填入下方兩行引號內；
+   之後拿到新版本檔案，只要把這兩行複製過去即可。
+   所有裝置（含家人手機）第一次開啟就會自動連線。
+   ============================================================ */
+const DEFAULT_CFG = {
+  url: 'https://hqnrhjquhmtxvrsiqxht.supabase.co',
+  key: 'sb_publishable_NH-caWYCoHfsaNSfRAgSpA_-RifW1a7'
+};
+
 const TABLES = ['buildings','rooms','tenants','leases','rent_payments',
   'meter_readings','electricity_bills','fixtures','replacements','utility_bills'];
 const UNIT_PRICE = 4;          // 電費每度
@@ -187,6 +198,8 @@ function persist(){ localStorage.setItem('rms1', JSON.stringify(
 function restore(){
   try{ const d = JSON.parse(localStorage.getItem('rms1')||'null');
     if(d){ S={...S,...d}; S.store=Object.assign(Object.fromEntries(TABLES.map(t=>[t,[]])),d.store||{});} }catch(e){}
+  // 本機沒有連線資料時，套用檔案內建的預設連線
+  if(!S.cfg.url && DEFAULT_CFG.url){ S.cfg.url=DEFAULT_CFG.url; S.cfg.key=DEFAULT_CFG.key; }
 }
 const uid = ()=> crypto.randomUUID();
 const today = ()=> new Date().toISOString().slice(0,10);
@@ -1072,6 +1085,7 @@ function moreSet(){
       <button class="btn grow" onclick="saveConn()">儲存並連線</button>
       <button class="btn sub" onclick="doPull()">從雲端重新載入</button></div>
     <div class="muted" style="margin-top:8px">狀態：<span id="connSt">${sb?'已連線':'未連線'}</span>${S.queue.length?`　待同步 ${S.queue.length} 筆`:''}</div>
+    <div class="muted" style="margin-top:4px">提示：連線資料可直接填入檔案開頭的 DEFAULT_CFG 區塊，換版本或新裝置免重填。</div>
   </div>
   <div class="card"><h2>資料</h2>
     <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
@@ -1085,7 +1099,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.0.2　參數如需調整請告知修改。</div>
+    <div class="muted" style="margin-top:6px">v1.0.4　參數如需調整請告知修改。</div>
   </div>`;
 }
 window.saveConn=async function(){
