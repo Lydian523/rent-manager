@@ -928,7 +928,11 @@ window.openRoomForm=function(id){
 };
 
 function moreTenants(){
-  let h=`<div class="card"><button class="btn" style="width:100%" onclick="openLeaseForm()">＋ 新租約（含房客）</button></div><div class="card"><h2>進行中租約</h2>`;
+  const pending=T('rooms').filter(r=>r.status==='出租中'&&!activeLease(r.id));
+  let h=`<div class="card"><div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+    ${pending.length?`<button class="btn" onclick="openBulkLease()">⚡ 批次補登出租中房間（${pending.length} 間）</button>`:''}
+    <button class="btn ${pending.length?'sub':''}" onclick="openLeaseForm()">＋ 新租約（含房客）</button>
+  </div></div><div class="card"><h2>進行中租約</h2>`;
   const ls=T('leases').filter(l=>l.active);
   if(!ls.length) h+=`<div class="empty">尚無租約</div>`;
   ls.forEach(l=>{
@@ -968,6 +972,39 @@ window.openTenantForm=function(id){
     upsert('tenants',t); m.remove(); toast('已儲存 ✓'); render();
   };
 };
+/* 批次補登：所有出租中但尚無租約的房間，一個畫面填完一鍵建立 */
+window.openBulkLease=function(){
+  const pending=T('rooms').filter(r=>r.status==='出租中'&&!activeLease(r.id))
+    .sort((a,b)=>roomLabel(a).localeCompare(roomLabel(b),'zh-Hant'));
+  if(!pending.length){toast('沒有待補登的房間');return;}
+  const m=modal(`<h3>批次補登房客（${pending.length} 間）</h3>
+    <div class="muted" style="margin-bottom:8px">填姓名即建立；留白的房間會跳過，之後可再補。電話與到期日可先空著日後編輯。</div>
+    <div class="row"><div class="grow"><label>起租日（套用全部）</label><input type="date" id="bkS" value="${today()}"></div>
+    <div class="grow"><label>押金</label><select id="bkD"><option value="1">一個月租金</option><option value="0">0（稍後填）</option></select></div></div>
+    <div class="divider"></div>
+    ${pending.map((r,i)=>`<div class="row" style="margin-bottom:8px">
+      <div style="width:118px;flex:none"><b>${esc(r.room_no)}</b><div class="muted" style="font-size:11px">${esc(byId('buildings',r.building_id)?.name||'')}</div></div>
+      <input id="bkN${i}" placeholder="姓名" class="grow">
+      <input id="bkP${i}" placeholder="電話" inputmode="tel" class="grow"></div>`).join('')}
+    <button class="btn" style="width:100%;margin-top:12px" id="bkGo">一鍵建立全部</button>`);
+  m.querySelector('#bkGo').onclick=()=>{
+    const sd=m.querySelector('#bkS').value, dep=m.querySelector('#bkD').value==='1';
+    let n=0;
+    pending.forEach((r,i)=>{
+      const name=m.querySelector('#bkN'+i).value.trim();
+      if(!name) return;
+      const t={id:uid(),name,phone:m.querySelector('#bkP'+i).value.trim(),
+        emergency_name:'',emergency_phone:'',note:''};
+      upsert('tenants',t);
+      upsert('leases',{id:uid(),room_id:r.id,tenant_id:t.id,start_date:sd,end_date:null,
+        deposit:dep?(r.monthly_rent||0):0,prepaid_months:0,active:true,note:'批次補登'});
+      n++;
+    });
+    m.remove(); render();
+    toast(n?`已建立 ${n} 間房客與租約 ✓`:'未填任何姓名，未建立資料');
+  };
+};
+
 window.openLeaseForm=function(id){
   const l=id?byId('leases',id):{id:uid(),room_id:'',tenant_id:'',start_date:today(),end_date:'',
     deposit:0,prepaid_months:0,active:true,note:''};
@@ -1048,7 +1085,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.0.1　參數如需調整請告知修改。</div>
+    <div class="muted" style="margin-top:6px">v1.0.2　參數如需調整請告知修改。</div>
   </div>`;
 }
 window.saveConn=async function(){
