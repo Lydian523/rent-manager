@@ -35,7 +35,7 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
 body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:16px;
-  padding-bottom:calc(76px + env(safe-area-inset-bottom));}
+  padding-bottom:calc(110px + env(safe-area-inset-bottom));}
 button{font-family:inherit;cursor:pointer}
 input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink);
   background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
@@ -565,8 +565,9 @@ window.roomDetail=function(id){
     ${t?`<div class="card"><h2>房客</h2>
       <div class="li"><div class="main"><div class="t1">${esc(t.name)}　${remindHint(t)}</div>
       <div class="t2">${esc(t.phone)||'未登記電話'}　緊急：${esc(t.emergency_name)} ${esc(t.emergency_phone)}</div></div>
-      ${t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}</div>
-      ${l?`<div class="t2" style="padding:4px 2px">租約：${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}${l.prepaid_months?`　預繳 ${l.prepaid_months} 月`:''}</div>`:''}
+      ${t.phone?`<a class="btn sm sub" href="tel:${esc(t.phone)}">撥打</a>`:''}
+      <button class="btn sm sub" onclick="this.closest('.modal-bg').remove();openTenantForm('${t.id}')">編輯</button></div>
+      ${l?`<div class="t2" style="padding:4px 2px">租約：${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}${l.prepaid_months?`　預繳 ${l.prepaid_months} 月`:''}${l.contract_no?'　契約 '+esc(l.contract_no):''}</div>`:''}
     </div>`:''}
     ${pays.length?`<div class="card"><h2>近期繳費</h2>${pays.map(p=>`
       <div class="li"><div class="main"><div class="t1">${p.period}</div>
@@ -691,14 +692,15 @@ function drawReceipt(lines,title,fname){
   const dataUrl=cv.toDataURL('image/png');
   const m=modal(`<h3>${esc(title)}</h3>
     <img src="${dataUrl}" style="width:100%;border-radius:12px;box-shadow:var(--shadow)" alt="憑證">
-    <div class="muted" style="margin:8px 0">手機可長按圖片直接儲存到照片；「下載」會存到瀏覽器的下載資料夾。</div>
+    <div class="alert" style="margin:10px 0">📱 <b>存入手機相簿</b>：長按上方圖片 → 「加入照片」；或按「分享」→ 「儲存影像」。<br>
+    「下載」不會進相簿，會存到「檔案」App 的下載項目（電腦則存到下載資料夾）。</div>
     <div class="row">
-      <button class="btn grow" id="rcDl">下載圖片</button>
-      <button class="btn sub grow" id="rcSh">分享…</button>
+      <button class="btn grow" id="rcSh">分享 / 存入相簿</button>
+      <button class="btn sub grow" id="rcDl">下載檔案</button>
     </div>`);
   m.querySelector('#rcDl').onclick=()=>{
     const a=document.createElement('a'); a.download=fname; a.href=dataUrl; a.click();
-    toast('已下載到瀏覽器下載資料夾');
+    toast('已存到「檔案」下載項目／電腦下載資料夾');
   };
   m.querySelector('#rcSh').onclick=()=>cv.toBlob(async blob=>{
     try{
@@ -1128,7 +1130,7 @@ function moreTenants(){
     h+=`<div class="li"><div class="main">
       <div class="t1">${esc(r?roomLabel(r):'?')}　${t?esc(t.name):''}
         ${rt?`<span class="pill ${d<0?'r':d<=LEASE_ALERT_DAYS?'a':'g'}" style="margin-left:4px">${rt}</span>`:'<span class="pill gr">未設到期日</span>'}</div>
-      <div class="t2">${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}</div></div>
+      <div class="t2">${l.start_date||'—'} ～ ${l.end_date||'—'}　押金 ${fmt$(l.deposit)}${l.contract_no?'　契約 '+esc(l.contract_no):''}</div></div>
       <button class="btn sm sub" onclick="openLeaseForm('${l.id}')">編輯</button>
       <button class="btn sm warn" onclick="moveOut('${l.id}')">退租</button></div>`;
   });
@@ -1194,7 +1196,7 @@ window.openBulkLease=function(){
 
 window.openLeaseForm=function(id){
   const l=id?byId('leases',id):{id:uid(),room_id:'',tenant_id:'',start_date:today(),end_date:'',
-    deposit:0,prepaid_months:0,active:true,note:''};
+    deposit:0,prepaid_months:0,active:true,contract_no:'',note:''};
   // 可選房間：尚無進行中租約者（含補登既有房客的出租中房間）；編輯時保留原房間
   const vac=T('rooms').filter(r=>!['倉庫','總錶'].includes(r.room_type)&&r.status!=='停用'&&(!activeLease(r.id)||r.id===l.room_id));
   if(!vac.length){ toast('所有房間都已有進行中租約'); return; }
@@ -1217,6 +1219,7 @@ window.openLeaseForm=function(id){
     </div>
     <div class="row"><div class="grow"><label>押金（元）</label><input id="ld" type="number" value="${l.deposit}"></div>
     <div class="grow"><label>預繳月數</label><input id="lp" type="number" value="${l.prepaid_months}"></div></div>
+    <label>契約書編碼</label><input id="lc" value="${esc(l.contract_no||'')}" placeholder="例：2026-A-201">
     <button class="btn" style="width:100%;margin-top:16px" id="lsv">儲存租約</button>`);
   m.querySelector('#lnew').onclick=()=>{m.remove();openTenantForm();};
   // 快速年份：簽 N 年＝起租日＋N年−1天；+1/−1年＝就現有到期日調整
@@ -1235,7 +1238,7 @@ window.openLeaseForm=function(id){
     if(!rid||!tid){toast('請選擇房間與房客');return;}
     Object.assign(l,{room_id:rid,tenant_id:tid,start_date:m.querySelector('#ls').value,
       end_date:m.querySelector('#le').value||null,deposit:+m.querySelector('#ld').value,
-      prepaid_months:+m.querySelector('#lp').value});
+      prepaid_months:+m.querySelector('#lp').value,contract_no:m.querySelector('#lc').value.trim()});
     upsert('leases',l);
     const r=byId('rooms',rid); if(r.status!=='出租中'){r.status='出租中';upsert('rooms',r);}
     m.remove(); toast('租約已儲存，房間狀態更新為出租中 ✓'); render();
@@ -1293,7 +1296,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.2.0　參數如需調整請告知修改。</div>
+    <div class="muted" style="margin-top:6px">v1.2.1　參數如需調整請告知修改。</div>
   </div>`;
 }
 window.saveConn=async function(){
