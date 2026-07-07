@@ -179,7 +179,7 @@ canvas.chart{width:100%!important}
 
 <script>
 /* =====================================================================
-   出租房屋管理系統 v1.2.3
+   出租房屋管理系統 v1.2.4
    架構：本機優先（localStorage）＋ Supabase 雲端同步（離線佇列）
    ===================================================================== */
 "use strict";
@@ -455,10 +455,21 @@ function confirmBox(msg,cb){
   m.querySelector('#cy').onclick=()=>{m.remove();cb();};
   m.querySelector('#cn').onclick=()=>m.remove();
 }
+/* 切換主頁或分頁後，強制回到頁面最上方；修正 iPhone 滾動位置沿用造成的下方/中段開頁問題 */
+function scrollPageTop(){
+  requestAnimationFrame(()=>{
+    try{ window.scrollTo({top:0,left:0,behavior:'auto'}); }catch(_){ window.scrollTo(0,0); }
+    const se=document.scrollingElement||document.documentElement||document.body;
+    if(se) se.scrollTop=0;
+    document.documentElement.scrollTop=0;
+    document.body.scrollTop=0;
+  });
+}
 document.querySelectorAll('nav.tabbar button').forEach(b=>b.onclick=()=>{
   tab=b.dataset.tab;
   document.querySelectorAll('nav.tabbar button').forEach(x=>x.classList.toggle('act',x===b));
   render();
+  scrollPageTop();
 });
 document.getElementById('darkBtn').onclick=()=>{
   S.dark=!S.dark; document.documentElement.dataset.theme=S.dark?'dark':'light'; persist();
@@ -773,7 +784,7 @@ function viewPower(){
   V.innerHTML=html;
   if(powerTab==='trend') initTrend();
 }
-window.setPowerTab=k=>{powerTab=k;render();};
+window.setPowerTab=k=>{powerTab=k;render();scrollPageTop();};
 
 /* 每個物件自動建立一個「電總錶」抄錶對象 */
 function ensureMasterMeters(){
@@ -1082,7 +1093,7 @@ function viewMore(){
   if(moreTab==='set') html+=moreSet();
   V.innerHTML=html;
 }
-window.setMoreTab=k=>{moreTab=k;render();};
+window.setMoreTab=k=>{moreTab=k;render();scrollPageTop();};
 
 function moreRooms(){
   let h=`<div class="card"><button class="btn" style="width:100%" onclick="openRoomForm()">＋ 新增房間</button></div>`;
@@ -1316,7 +1327,7 @@ function moreSet(){
     <div class="li"><div class="main"><div class="t1">繳款期限</div></div><span>每月 ${RENT_DUE_DAY} 日</span></div>
     <div class="li"><div class="main"><div class="t1">租約到期提醒</div></div><span>前 ${LEASE_ALERT_DAYS} 天</span></div>
     <div class="li"><div class="main"><div class="t1">總錶暴增門檻</div></div><span>＋${Math.round((SPIKE_RATIO-1)*100)}%</span></div>
-    <div class="muted" style="margin-top:6px">v1.2.3　iPhone 底部導航遮擋修正；參數如需調整請告知修改。</div>
+    <div class="muted" style="margin-top:6px">v1.2.4　iPhone 底部導航遮擋修正；切換頁面自動回到最上方。</div>
   </div>`;
 }
 window.saveConn=async function(){
